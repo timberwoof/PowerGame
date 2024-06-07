@@ -76,12 +76,14 @@ presentMainMenu(key whoClicked) {
 }
 
 
+
 default
 {
     state_entry()
     {
         sayDebug("state_entry");
         llSetTimerEvent(1);
+        llListen(POWER_CHANNEL, "", NULL_KEY, "");
     }
 
     touch_start(integer total_number)
@@ -91,16 +93,24 @@ default
         presentMainMenu(whoClicked);
     }
     
-    listen( integer channel, string name, key avatarKey, string message )
+    listen( integer channel, string name, key objectKey, string message )
     {
         sayDebug("listen name:"+name+" message:"+message);
-        if (message == CLOSE) {
-            sayDebug("listen Close");
-        } else if (message == RESET) {
-            sayDebug("listen Reset");
-            llResetScript();
-        } else {
-            sayDebug("listen did not handle "+message);
+        if (channel == menuChannel) {
+            resetMenu();
+            if (message == CLOSE) {
+                sayDebug("listen Close");
+            } else if (message == RESET) {
+                sayDebug("listen Reset");
+                llResetScript();
+            } else {
+                sayDebug("listen did not handle "+message);
+            }
+        } else if (channel == POWER_CHANNEL) {
+            if (message == PING+REQ) {
+                sayDebug("ping req");
+                llRegionSayTo(objectKey, POWER_CHANNEL, PING+ACK);
+            }
         }
     }
 
