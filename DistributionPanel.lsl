@@ -13,8 +13,9 @@ string CONNECT = "Connect";
 string POWER = "Power";
 string RESET = "Reset";
 
-list devices;
-list power_draws; // how much power each device wants
+list device_keys;
+list device_names;
+list device_draws; // how much power each device wants
 
 integer dialog_channel;
 integer dialog_listen;
@@ -75,6 +76,26 @@ presentMainMenu(key whoClicked) {
     setUpMenu(mainMenu, whoClicked, message, buttons);
 }
 
+list_devices() {
+    integer i;
+    for (i = 0; i < llGetListLength(device_keys); i = i + 1) {
+        llSay(0, llList2String(device_names, i) + (string)llList2Integer(device_draws, i));
+    }
+}
+
+add_device(key objectKey, string objectName) {
+    integer e = llListFindList(device_keys, [objectKey]);
+    if (e > -1) {
+        device_keys = llDeleteSubList(device_keys, e, e);
+        device_names = llDeleteSubList(device_names, e, e);
+        device_draws = llDeleteSubList(device_draws, e, e);
+    }
+    device_keys = device_keys + [objectKey];
+    device_names = device_names + [objectName];
+    device_draws = device_draws + [0];
+    
+    list_devices();
+}
 
 
 default
@@ -110,6 +131,9 @@ default
             if (message == PING+REQ) {
                 sayDebug("ping req");
                 llRegionSayTo(objectKey, POWER_CHANNEL, PING+ACK);
+            } else if (message == CONNECT+REQ) {
+                sayDebug("connect req");
+                add_device(objectKey, name);
             }
         }
     }
