@@ -3,17 +3,23 @@
 
 integer POWER_CHANNEL = -654647;
 integer clock_interval = 1;
-float power_draw = 100;
+integer power_draw = 100;
 
 string REQ = "-REQ";
 string ACK = "-ACK";
 string PING = "Ping";
+string STATUS = "Status";
 string CONNECT = "Connect";
+string DISCONNECT = "Disconnect";
 string POWER = "Power";
 string RESET = "Reset";
+string NONE = "None";
 
 list power_panel_keys;
 list power_panel_names;
+
+key my_power_panel_key;
+string my_power_panel_name;
 
 integer dialog_channel;
 integer dialog_listen;
@@ -70,11 +76,22 @@ resetMenu() {
 
 presentMainMenu(key whoClicked) {
     string message = "Lamp Main Menu";
-    list buttons = ["Power", PING, CONNECT, RESET];
+    list buttons = ["Power", STATUS, PING]; 
+    if (my_power_panel_key == NULL_KEY) {
+        buttons = buttons + [CONNECT];
+    } else {
+        buttons = buttons + [DISCONNECT];
+    }
+    buttons = buttons + [RESET];
     setUpMenu(mainMenu, whoClicked, message, buttons);
 }
 
+report_status() {
+    llSay(0,"Consuming "+(string)power_draw+" watts from power source: "+my_power_panel_name);
+}
+
 ping_req() {
+    sayDebug ("ping_req");
     power_panel_keys = [];
     power_panel_names = [];
     llSay(POWER_CHANNEL, PING+REQ);
@@ -92,6 +109,7 @@ presentConnectMenu(key whoClicked) {
     list buttons = [];
     for (i = 0; i < llGetListLength(power_panel_names); i = i + 1) {
         message = message + "\n" + (string)i + " " + llList2String(power_panel_names, i);
+        sayDebug("presentConenctMenu:"+message);
         buttons = buttons + [(string)i];
     }
     setUpMenu(CONNECT, whoClicked, message, buttons);    
@@ -104,6 +122,8 @@ default
         sayDebug("state_entry");
         llSetTimerEvent(1);
         llListen(POWER_CHANNEL, "", NULL_KEY, "");
+        my_power_panel_key = NULL_KEY;
+        my_power_panel_name = NONE;
     }
 
     touch_start(integer total_number)
@@ -121,15 +141,17 @@ default
             resetMenu();
             if (message == CLOSE) {
                 sayDebug("listen Close");
+            } else if (message == STATUS) {
+                report_status();
             } else if (message == RESET) {
-                sayDebug("listen Reset");
                 llResetScript();
             } else if (message == PING) {
-                sayDebug("listen Ping");
                 ping_req();
             } else if (message == CONNECT) {
-                sayDebug("listen connect from "+name);
                 presentConnectMenu(objectKey);
+            } else if (message == DISCONNECT) {
+                sayDebug("listen DISCONNECT from "+name+": "+message);
+                llRegionSayTo(llList2Key(power_panel_keys, (integer)message), POWER_CHANNEL, DISCONNECT+REQ);
             } else if (menuIdentifier == CONNECT) {
                 sayDebug("listen CONNECT from "+name+": "+message);
                 llRegionSayTo(llList2Key(power_panel_keys, (integer)message), POWER_CHANNEL, CONNECT+REQ);
@@ -139,6 +161,12 @@ default
         } else if (channel == POWER_CHANNEL) {
             if (message == PING+ACK) {
                 ping_ack(name, objectKey);
+            } else if (message == CONNECT+ACK) {
+                my_power_panel_key = objectKey;
+                my_power_panel_name = name;
+            } else if (message == DISCONNECT+ACK) {
+                my_power_panel_key = NULL_KEY;
+                my_power_panel_name = NONE;
             }
         }
     }
