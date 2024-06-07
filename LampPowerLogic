@@ -3,8 +3,7 @@
 
 integer POWER_CHANNEL = -654647;
 integer clock_interval = 1;
-float power_sourced = 1000; // how much power we are getting form sources
-float power_capacity = 1000; // how much power we can transfer toal
+float power_draw = 100;
 
 string REQ = "-REQ";
 string ACK = "-ACK";
@@ -13,8 +12,8 @@ string CONNECT = "Connect";
 string POWER = "Power";
 string RESET = "Reset";
 
-list devices;
-list power_draws; // how much power each device wants
+list power_panel_keys;
+list power_panel_names;
 
 integer dialog_channel;
 integer dialog_listen;
@@ -76,11 +75,26 @@ presentMainMenu(key whoClicked) {
 }
 
 ping_req() {
+    power_panel_keys = [];
+    power_panel_names = [];
     llSay(POWER_CHANNEL, PING+REQ);
 }
 
 ping_ack(string name, key objectKey) {
     sayDebug ("ping_ack");
+    power_panel_keys = power_panel_keys + [objectKey];
+    power_panel_names = power_panel_names + [name];
+}
+
+presentConnectMenu(key whoClicked) {
+    string message = "Select Power Distribution Panel to Connect To:";
+    integer i;
+    list buttons = [];
+    for (i = 0; i < llGetListLength(power_panel_names); i = i + 1) {
+        message = message + "\n" + (string)i + " " + llList2String(power_panel_names, i);
+        buttons = buttons + [(string)i];
+    }
+    setUpMenu(CONNECT, whoClicked, message, buttons);    
 }
 
 default
@@ -99,7 +113,7 @@ default
         presentMainMenu(whoClicked);
     }
     
-    listen( integer channel, string name, key objectKey, string message )
+    listen(integer channel, string name, key objectKey, string message )
     {
         sayDebug("listen name:"+name+" message:"+message);
         
@@ -113,6 +127,12 @@ default
             } else if (message == PING) {
                 sayDebug("listen Ping");
                 ping_req();
+            } else if (message == CONNECT) {
+                sayDebug("listen connect from "+name);
+                presentConnectMenu(objectKey);
+            } else if (menuIdentifier == CONNECT) {
+                sayDebug("listen CONNECT from "+name+": "+message);
+                llRegionSayTo(llList2Key(power_panel_keys, (integer)message), POWER_CHANNEL, CONNECT+REQ);
             } else {
                 sayDebug("listen did not handle "+message);
             }
