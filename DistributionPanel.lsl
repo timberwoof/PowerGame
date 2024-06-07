@@ -10,6 +10,7 @@ string REQ = "-REQ";
 string ACK = "-ACK";
 string PING = "Ping";
 string CONNECT = "Connect";
+string DISCONNECT = "Disconnect";
 string POWER = "Power";
 string RESET = "Reset";
 
@@ -72,20 +73,34 @@ resetMenu() {
 
 presentMainMenu(key whoClicked) {
     string message = "Power Panel Main Menu";
-    list buttons = [RESET];
+    list buttons = [RESET, DISCONNECT];
     setUpMenu(mainMenu, whoClicked, message, buttons);
 }
+
+presentDisonnectMenu(key whoClicked) {
+    string message = "Select Power Consumer to Disconnect:";
+    integer i;
+    list buttons = [];
+    for (i = 0; i < llGetListLength(device_names); i = i + 1) {
+        message = message + "\n" + (string)i + " " + llList2String(device_names, i) + " " + llList2String(device_draws, i) + "W";
+        sayDebug("presentDisonnectMnu:"+message);
+        buttons = buttons + [(string)i];
+    }
+    setUpMenu(DISCONNECT, whoClicked, message, buttons);    
+}
+
 
 list_devices() {
     integer i;
     for (i = 0; i < llGetListLength(device_keys); i = i + 1) {
-        llSay(0, llList2String(device_names, i) + (string)llList2Integer(device_draws, i));
+        llSay(0, llList2String(device_names, i) + ": " + (string)llList2Integer(device_draws, i)+" watts");
     }
 }
 
 add_device(key objectKey, string objectName) {
     integer e = llListFindList(device_keys, [objectKey]);
     if (e > -1) {
+        sayDebug("device "+objectName+" was already in ist");
         device_keys = llDeleteSubList(device_keys, e, e);
         device_names = llDeleteSubList(device_names, e, e);
         device_draws = llDeleteSubList(device_draws, e, e);
@@ -93,7 +108,7 @@ add_device(key objectKey, string objectName) {
     device_keys = device_keys + [objectKey];
     device_names = device_names + [objectName];
     device_draws = device_draws + [0];
-    
+    llRegionSayTo(objectKey, POWER_CHANNEL, CONNECT+ACK);
     list_devices();
 }
 
@@ -124,6 +139,11 @@ default
             } else if (message == RESET) {
                 sayDebug("listen Reset");
                 llResetScript();
+            } else if (message == DISCONNECT) {
+                presentDisonnectMenu(objectKey);
+            } else if (menuIdentifier == DISCONNECT) {
+                sayDebug("listen DISCONNECT from "+name+": "+message);
+                llRegionSayTo(llList2Key(device_keys, (integer)message), POWER_CHANNEL, DISCONNECT+ACK);
             } else {
                 sayDebug("listen did not handle "+message);
             }
