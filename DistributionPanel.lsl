@@ -16,6 +16,7 @@ string DISCONNECT_DRAIN = "Disc Drain";
 string POWER = "Power";
 string RESET = "Reset";
 string NONE = "None";
+string DEBUG = "Debug";
 
 list known_source_keys;
 list known_source_names;
@@ -51,9 +52,9 @@ integer menuChannel;
 integer menuListen;
 integer menuTimeout;
 
-integer DEBUG = TRUE;
+integer debug_state = FALSE;
 sayDebug(string message) {
-    if (DEBUG) {
+    if (debug_state) {
         llSay(0,message);
     }
 }
@@ -180,6 +181,7 @@ presentMainMenu(key whoClicked) {
     buttons = buttons + menuButtonActive(DISCONNECT_DRAIN, num_drains > 0); 
     buttons = buttons + menuButtonActive(menuCheckbox("Power", power_state), num_known_sources > 0);
     buttons = buttons + [RESET]; // *** might not be a good idea
+    buttons = buttons + menuCheckbox(DEBUG, debug_state);
     setUpMenu(mainMenu, whoClicked, message, buttons);
 }
 
@@ -479,6 +481,8 @@ default
                 llRegionSayTo(llList2Key(drain_keys, (integer)message), POWER_CHANNEL, DISCONNECT+ACK);
             } else if (trimMessageButton(message) == POWER) {
                 switch_power();
+            } else if (trimMessageButton(message) == DEBUG) {
+                debug_state = !debug_state;
             } else {
                 sayDebug("listen did not handle "+menuIdentifier+":"+message);
             }
