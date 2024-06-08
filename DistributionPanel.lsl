@@ -3,8 +3,6 @@
 
 integer POWER_CHANNEL = -654647;
 integer clock_interval = 1;
-float power_sourced = 1000; // how much power we are getting form sources
-float power_capacity = 1000; // how much power we can transfer toal
 
 string REQ = "-REQ";
 string ACK = "-ACK";
@@ -13,21 +11,18 @@ string CONNECT = "Connect";
 string DISCONNECT = "Disconnect";
 string POWER = "Power";
 string RESET = "Reset";
+string STATUS = "Status";
 
 list device_keys;
 list device_names;
 list device_draws; // how much power each device wants
+integer power_sourced = 1000; // how much power we are getting from sources
+integer power_capacity = 1000; // how much power we can transfer toal
+integer power_level = 0;
 
 integer dialog_channel;
 integer dialog_listen;
 integer dialog_countdown;
-
-integer DEBUG = TRUE;
-sayDebug(string message) {
-    if (DEBUG) {
-        llSay(0,message);
-    }
-}
 
 string CLOSE = "Close";
 string mainMenu = "Main";
@@ -36,6 +31,91 @@ key menuAgentKey;
 integer menuChannel;
 integer menuListen;
 integer menuTimeout;
+
+integer DEBUG = TRUE;
+sayDebug(string message) {
+    if (DEBUG) {
+        llSay(0,message);
+    }
+}
+
+string menuCheckbox(string title, integer onOff)
+// make checkbox menu item out of a button title and boolean state
+{
+    string checkbox;
+    if (onOff)
+    {
+        checkbox = "☒";
+    }
+    else
+    {
+        checkbox = "☐";
+    }
+    return checkbox + " " + title;
+}
+
+list menuRadioButton(string title, string match)
+// make radio button menu item out of a button and the state text
+{
+    string radiobutton;
+    if (title == match)
+    {
+        radiobutton = "●";
+    }
+    else
+    {
+        radiobutton = "○";
+    }
+    return [radiobutton + " " + title];
+}
+
+list menuButtonActive(string title, integer onOff)
+// make a menu button be the text or the Inactive symbol
+{
+    string button;
+    if (onOff)
+    {
+        button = title;
+    }
+    else
+    {
+        button = "["+title+"]";
+    }
+    return [button];
+}
+
+string trimMessageButton(string message) {
+    string messageButtonsTrimmed = message;
+    
+    list LstripList = ["☒ ","☐ ","● ","○ "];
+    integer i;
+    for (i=0; i < llGetListLength(LstripList); i = i + 1) {
+        string thing = llList2String(LstripList, i);
+        integer whereThing = llSubStringIndex(messageButtonsTrimmed, thing);
+        if (whereThing > -1) {
+            integer thingLength = llStringLength(thing)-1;
+            messageButtonsTrimmed = llDeleteSubString(messageButtonsTrimmed, whereThing, whereThing + thingLength);
+        }
+    }
+    
+    return messageButtonsTrimmed;
+}
+
+string trimMessageParameters(string message) {
+    string messageTrimmed = message;
+    integer whereLBracket = llSubStringIndex(message, "[") -1;
+    if (whereLBracket > -1) {
+        messageTrimmed = llGetSubString(message, 0, whereLBracket);
+    }
+    return messageTrimmed;
+}
+
+integer getMessageParameter(string message) {
+    integer whereLBracket = llSubStringIndex(message, "[") +1;
+    integer whereRBracket = llSubStringIndex(message, "]") -1;
+    string parameters = llGetSubString(message, whereLBracket, whereRBracket);
+    return (integer)parameters;
+}
 
 setUpMenu(string identifier, key avatarKey, string message, list buttons)
 // wrapper to do all the calls that make a simple menu dialog.
@@ -73,7 +153,7 @@ resetMenu() {
 
 presentMainMenu(key whoClicked) {
     string message = "Power Panel Main Menu";
-    list buttons = [RESET, DISCONNECT];
+    list buttons = [STATUS, RESET, DISCONNECT];
     setUpMenu(mainMenu, whoClicked, message, buttons);
 }
 
@@ -89,21 +169,33 @@ presentDisonnectMenu(key whoClicked) {
     setUpMenu(DISCONNECT, whoClicked, message, buttons);    
 }
 
-
 list_devices() {
     integer i;
-    for (i = 0; i < llGetListLength(device_keys); i = i + 1) {
-        llSay(0, llList2String(device_names, i) + ": " + (string)llList2Integer(device_draws, i)+" watts");
+    integer num_devices = llGetListLength(device_keys);
+    if (num_devices > 0) {
+        for (i = 0; i < num_devices; i = i + 1) {
+            llSay(0, llList2String(device_names, i) + ": " + (string)llList2Integer(device_draws, i)+" watts");
+        }
+    } else {
+        llSay(0,"No devices connected.");
     }
 }
 
+report_status() {
+    llSay(0,"Device Report:");
+    llSay(0,"Maximum Power: "+ (string)power_capacity + " watts");
+    llSay(0,"Input Power: "+ (string)power_sourced + " watts");
+    llSay(0,"Output Power: "+ (string)power_level + " watts");
+    list_devices();
+}
+
 add_device(key objectKey, string objectName) {
-    integer e = llListFindList(device_keys, [objectKey]);
-    if (e > -1) {
-        sayDebug("device "+objectName+" was already in ist");
-        device_keys = llDeleteSubList(device_keys, e, e);
-        device_names = llDeleteSubList(device_names, e, e);
-        device_draws = llDeleteSubList(device_draws, e, e);
+    integer i = llListFindList(device_keys, [objectKey]);
+    if (i > -1) {
+        sayDebug("device "+objectName+" was already in list");
+        device_keys = llDeleteSubList(device_keys, i, i);
+        device_names = llDeleteSubList(device_names, i, i);
+        device_draws = llDeleteSubList(device_draws, i, i);
     }
     device_keys = device_keys + [objectKey];
     device_names = device_names + [objectName];
@@ -112,6 +204,61 @@ add_device(key objectKey, string objectName) {
     list_devices();
 }
 
+remove_device(key objectKey, string objectName) {
+    integer i = llListFindList(device_keys, [objectKey]);
+    if (i > -1) {
+        device_keys = llDeleteSubList(device_keys, i, i);
+        device_names = llDeleteSubList(device_names, i, i);
+        device_draws = llDeleteSubList(device_draws, i, i);        
+    }
+    llRegionSayTo(objectKey, POWER_CHANNEL, DISCONNECT+ACK);
+}
+
+integer calculate_power() {
+    integer power_draw = 0;
+    integer i;
+    for (i = i; i < llGetListLength(device_draws); i = i + 1) {
+        power_draw = power_draw + llList2Integer(device_draws, i);
+    }
+    return power_draw;    
+}
+
+cut_all_power() {
+    sayDebug("cut_all_power");
+    integer i;
+    for (i = i; i < llGetListLength(device_keys); i = i + 1) {
+        key objectKey = llList2Key(device_keys, i);
+        llRegionSayTo(objectKey, POWER_CHANNEL, POWER+ACK+"[0]");
+    }
+    // *** report zero power consumption to source
+    
+}
+
+handle_power_request(key objectKey, string objectName, integer powerLevel) {
+    sayDebug(objectName+" requests "+(string)powerLevel+" watts");
+    integer i;
+    integer object_num = -1;
+    
+    // find the device's index in the list
+    object_num = llListFindList(device_keys, [objectKey]);
+    
+    // update the bject's power draw
+    if (object_num > -1) {
+        device_draws = llListReplaceList(device_draws, [powerLevel], object_num,object_num);
+        power_level = calculate_power();
+        if ((power_level > power_sourced) | (power_level > power_capacity)) {
+            cut_all_power();
+        } else {
+            llRegionSayTo(objectKey, POWER_CHANNEL, POWER+ACK+"["+(string)powerLevel+"]");
+            // *** need to report power consumption to source
+        }
+    } else {
+        sayDebug("object was not connected");
+        llRegionSayTo(objectKey, POWER_CHANNEL, POWER+ACK+"[0]");
+        // *** should send POWER+NACK but that hasn't been defined
+    }
+    report_status();
+}
 
 default
 {
@@ -136,6 +283,8 @@ default
             resetMenu();
             if (message == CLOSE) {
                 sayDebug("listen Close");
+            } else if (message == STATUS) {
+                report_status();
             } else if (message == RESET) {
                 sayDebug("listen Reset");
                 llResetScript();
@@ -154,6 +303,12 @@ default
             } else if (message == CONNECT+REQ) {
                 sayDebug("connect req");
                 add_device(objectKey, name);
+            } else if (message == DISCONNECT+REQ) {
+                sayDebug("disconnect req");
+                remove_device(objectKey, name);
+            } else if (trimMessageParameters(message) == POWER+REQ) {
+                sayDebug("power req");
+                handle_power_request(objectKey, name, getMessageParameter(message));
             }
         }
     }
