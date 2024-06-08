@@ -15,6 +15,7 @@ string DISCONNECT = "Disconnect";
 string POWER = "Power";
 string RESET = "Reset";
 string NONE = "None";
+string DEBUG = "Debug";
 integer ON = TRUE;
 integer OFF = FALSE;
 
@@ -37,9 +38,9 @@ integer menuChannel;
 integer menuListen;
 integer menuTimeout;
 
-integer DEBUG = TRUE;
+integer debug_state = FALSE;
 sayDebug(string message) {
-    if (DEBUG) {
+    if (debug_state) {
         llSay(0,message);
     }
 }
@@ -258,6 +259,8 @@ default
                 llRegionSayTo(llList2Key(power_panel_keys, (integer)message), POWER_CHANNEL, CONNECT+REQ);
             } else if (trimMessageButton(message) == POWER) {
                 switch_power();
+            } else if (trimMessageButton(message) == DEBUG) {
+                debug_state = !debug_state;
             } else {
                 sayDebug("listen did not handle "+message);
             }
