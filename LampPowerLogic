@@ -3,7 +3,8 @@
 
 integer POWER_CHANNEL = -654647;
 integer clock_interval = 1;
-integer power_draw = 100;
+integer power_ask = 100;
+integer power_draw = 0;
 
 string REQ = "-REQ";
 string ACK = "-ACK";
@@ -14,23 +15,19 @@ string DISCONNECT = "Disconnect";
 string POWER = "Power";
 string RESET = "Reset";
 string NONE = "None";
+integer ON = TRUE;
+integer OFF = FALSE;
 
 list power_panel_keys;
 list power_panel_names;
-
 key my_power_panel_key;
 string my_power_panel_name;
+integer connected;
+integer power_state;
 
 integer dialog_channel;
 integer dialog_listen;
 integer dialog_countdown;
-
-integer DEBUG = TRUE;
-sayDebug(string message) {
-    if (DEBUG) {
-        llSay(0,message);
-    }
-}
 
 string CLOSE = "Close";
 string mainMenu = "Main";
@@ -39,6 +36,73 @@ key menuAgentKey;
 integer menuChannel;
 integer menuListen;
 integer menuTimeout;
+
+integer DEBUG = TRUE;
+sayDebug(string message) {
+    if (DEBUG) {
+        llSay(0,message);
+    }
+}
+
+string menuCheckbox(string title, integer onOff)
+// make checkbox menu item out of a button title and boolean state
+{
+    string checkbox;
+    if (onOff)
+    {
+        checkbox = "☒";
+    }
+    else
+    {
+        checkbox = "☐";
+    }
+    return checkbox + " " + title;
+}
+
+list menuRadioButton(string title, string match)
+// make radio button menu item out of a button and the state text
+{
+    string radiobutton;
+    if (title == match)
+    {
+        radiobutton = "●";
+    }
+    else
+    {
+        radiobutton = "○";
+    }
+    return [radiobutton + " " + title];
+}
+
+list menuButtonActive(string title, integer onOff)
+// make a menu button be the text or the Inactive symbol
+{
+    string button;
+    if (onOff)
+    {
+        button = title;
+    }
+    else
+    {
+        button = "["+title+"]";
+    }
+    return [button];
+}
+
+string trimMessageButton(string message) {
+    string messageButtonsTrimmed = message;
+    list striplist = ["☒ ","☐ ","● ","○ "];
+    integer i;
+    for (i=0; i < llGetListLength(striplist); i = i + 1) {
+        string thing = llList2String(striplist, i);
+        integer whereThing = llSubStringIndex(messageButtonsTrimmed, thing);
+        if (whereThing > -1) {
+            integer thingLength = llStringLength(thing)-1;
+            messageButtonsTrimmed = llDeleteSubString(messageButtonsTrimmed, whereThing, whereThing + thingLength);
+        }
+    }
+    return messageButtonsTrimmed;
+}
 
 setUpMenu(string identifier, key avatarKey, string message, list buttons)
 // wrapper to do all the calls that make a simple menu dialog.
@@ -76,18 +140,33 @@ resetMenu() {
 
 presentMainMenu(key whoClicked) {
     string message = "Lamp Main Menu";
-    list buttons = ["Power", STATUS, PING]; 
-    if (my_power_panel_key == NULL_KEY) {
-        buttons = buttons + [CONNECT];
+    list buttons = [];
+    buttons = buttons + menuButtonActive(PING, !connected); 
+    if (connected) {
+        buttons = buttons + DISCONNECT; 
     } else {
-        buttons = buttons + [DISCONNECT];
+        buttons = buttons + CONNECT; 
     }
-    buttons = buttons + [RESET];
+    buttons = buttons + menuButtonActive(menuCheckbox("Power", power_state), connected);
+    buttons = buttons + STATUS;
+    buttons = buttons + menuButtonActive(RESET, !connected);
     setUpMenu(mainMenu, whoClicked, message, buttons);
 }
 
-report_status() {
-    llSay(0,"Consuming "+(string)power_draw+" watts from power source: "+my_power_panel_name);
+string trimMessageParameters(string message) {
+    string messageTrimmed = message;
+    integer whereLBracket = llSubStringIndex(message, "[") -1;
+    if (whereLBracket > -1) {
+        messageTrimmed = llGetSubString(message, 0, whereLBracket);
+    }
+    return messageTrimmed;
+}
+
+integer getMessageParameter(string message) {
+    integer whereLBracket = llSubStringIndex(message, "[") +1;
+    integer whereRBracket = llSubStringIndex(message, "]") -1;
+    string parameters = llGetSubString(message, whereLBracket, whereRBracket);
+    return (integer)parameters;
 }
 
 ping_req() {
@@ -115,6 +194,26 @@ presentConnectMenu(key whoClicked) {
     setUpMenu(CONNECT, whoClicked, message, buttons);    
 }
 
+string power_state_to_string(integer power_state) {
+    if (power_state) {
+        return "On";
+    } else {
+        return "Off";
+    }
+}
+
+report_status() {
+    llSay(0,"Power: "+power_state_to_string(power_state)+". Consuming "+(string)power_draw+" watts from power source "+my_power_panel_name+".");
+}
+
+switch_power() {
+    if (power_state) {
+        llRegionSayTo(my_power_panel_key, POWER_CHANNEL, POWER+REQ+"[0]");
+    } else {
+        llRegionSayTo(my_power_panel_key, POWER_CHANNEL, POWER+REQ+"["+(string)power_ask+"]");
+    }
+}
+
 default
 {
     state_entry()
@@ -124,6 +223,8 @@ default
         llListen(POWER_CHANNEL, "", NULL_KEY, "");
         my_power_panel_key = NULL_KEY;
         my_power_panel_name = NONE;
+        power_state = OFF;
+        connected = FALSE;
     }
 
     touch_start(integer total_number)
@@ -155,6 +256,8 @@ default
             } else if (menuIdentifier == CONNECT) {
                 sayDebug("listen CONNECT from "+name+": "+message);
                 llRegionSayTo(llList2Key(power_panel_keys, (integer)message), POWER_CHANNEL, CONNECT+REQ);
+            } else if (trimMessageButton(message) == POWER) {
+                switch_power();
             } else {
                 sayDebug("listen did not handle "+message);
             }
@@ -164,9 +267,15 @@ default
             } else if (message == CONNECT+ACK) {
                 my_power_panel_key = objectKey;
                 my_power_panel_name = name;
+                connected = TRUE;
             } else if (message == DISCONNECT+ACK) {
                 my_power_panel_key = NULL_KEY;
                 my_power_panel_name = NONE;
+                connected = FALSE;
+            } else if (trimMessageParameters(message) == POWER+ACK) {
+                power_draw = getMessageParameter(message);
+                power_state = (connected & (power_draw == power_ask));
+                sayDebug("listen "+message+" "+(string)power_draw+" results in  power state:"+(string)power_state);
             }
         }
     }
