@@ -10,10 +10,11 @@ string DISCONNECT = "Disconnect";
 string POWER = "Power";
 string RESET = "Reset";
 string STATUS = "Status";
+string DEBUG = "Debug";
 
-list device_keys;
-list device_names;
-list device_draws; // how much power each device wants
+list drain_keys;
+list drain_names;
+list drain_draws; // how much power each device wants
 integer power_sourced = 1000; // how much power we are getting from sources
 integer power_capacity = 1000; // how much power we can transfer toal
 integer power_level = 0;
@@ -30,9 +31,9 @@ integer menuChannel;
 integer menuListen;
 integer menuTimeout;
 
-integer DEBUG = TRUE;
+integer debug_state = FALSE;
 sayDebug(string message) {
-    if (DEBUG) {
+    if (debug_state) {
         llSay(0,message);
     }
 }
@@ -159,8 +160,8 @@ presentDisonnectMenu(key whoClicked) {
     string message = "Select Power Consumer to Disconnect:";
     integer i;
     list buttons = [];
-    for (i = 0; i < llGetListLength(device_names); i = i + 1) {
-        message = message + "\n" + (string)i + " " + llList2String(device_names, i) + " " + llList2String(device_draws, i) + "W";
+    for (i = 0; i < llGetListLength(drain_names); i = i + 1) {
+        message = message + "\n" + (string)i + " " + llList2String(drain_names, i) + " " + llList2String(drain_draws, i) + "W";
         sayDebug("presentDisonnectMnu:"+message);
         buttons = buttons + [(string)i];
     }
@@ -169,10 +170,10 @@ presentDisonnectMenu(key whoClicked) {
 
 list_devices() {
     integer i;
-    integer num_devices = llGetListLength(device_keys);
+    integer num_devices = llGetListLength(drain_keys);
     if (num_devices > 0) {
         for (i = 0; i < num_devices; i = i + 1) {
-            llSay(0, llList2String(device_names, i) + ": " + (string)llList2Integer(device_draws, i)+" watts");
+            llSay(0, llList2String(drain_names, i) + ": " + (string)llList2Integer(drain_draws, i)+" watts");
         }
     } else {
         llSay(0,"No devices connected.");
@@ -187,27 +188,27 @@ report_status() {
     list_devices();
 }
 
-add_device(key objectKey, string objectName) {
-    integer i = llListFindList(device_keys, [objectKey]);
+add_drain(key objectKey, string objectName) {
+    integer i = llListFindList(drain_keys, [objectKey]);
     if (i > -1) {
         sayDebug("device "+objectName+" was already in list");
-        device_keys = llDeleteSubList(device_keys, i, i);
-        device_names = llDeleteSubList(device_names, i, i);
-        device_draws = llDeleteSubList(device_draws, i, i);
+        drain_keys = llDeleteSubList(drain_keys, i, i);
+        drain_names = llDeleteSubList(drain_names, i, i);
+        drain_draws = llDeleteSubList(drain_draws, i, i);
     }
-    device_keys = device_keys + [objectKey];
-    device_names = device_names + [objectName];
-    device_draws = device_draws + [0];
-    llRegionSayTo(objectKey, POWER_CHANNEL, CONNECT+ACK);
+    drain_keys = drain_keys + [objectKey];
+    drain_names = drain_names + [objectName];
+    drain_draws = drain_draws + [0];
+    llRegionSayTo(objectKey, POWER_CHANNEL, CONNECT+ACK+"["+(string)power_capacity+"]");
     list_devices();
 }
 
 remove_device(key objectKey, string objectName) {
-    integer i = llListFindList(device_keys, [objectKey]);
+    integer i = llListFindList(drain_keys, [objectKey]);
     if (i > -1) {
-        device_keys = llDeleteSubList(device_keys, i, i);
-        device_names = llDeleteSubList(device_names, i, i);
-        device_draws = llDeleteSubList(device_draws, i, i);        
+        drain_keys = llDeleteSubList(drain_keys, i, i);
+        drain_names = llDeleteSubList(drain_names, i, i);
+        drain_draws = llDeleteSubList(drain_draws, i, i);        
     }
     llRegionSayTo(objectKey, POWER_CHANNEL, DISCONNECT+ACK);
 }
@@ -215,8 +216,8 @@ remove_device(key objectKey, string objectName) {
 integer calculate_power() {
     integer power_draw = 0;
     integer i;
-    for (i = i; i < llGetListLength(device_draws); i = i + 1) {
-        power_draw = power_draw + llList2Integer(device_draws, i);
+    for (i = i; i < llGetListLength(drain_draws); i = i + 1) {
+        power_draw = power_draw + llList2Integer(drain_draws, i);
     }
     return power_draw;    
 }
@@ -224,8 +225,8 @@ integer calculate_power() {
 cut_all_power() {
     sayDebug("cut_all_power");
     integer i;
-    for (i = i; i < llGetListLength(device_keys); i = i + 1) {
-        key objectKey = llList2Key(device_keys, i);
+    for (i = i; i < llGetListLength(drain_keys); i = i + 1) {
+        key objectKey = llList2Key(drain_keys, i);
         llRegionSayTo(objectKey, POWER_CHANNEL, POWER+ACK+"[0]");
     }    
 }
@@ -236,11 +237,11 @@ handle_power_request(key objectKey, string objectName, integer powerLevel) {
     integer object_num = -1;
     
     // find the device's index in the list
-    object_num = llListFindList(device_keys, [objectKey]);
+    object_num = llListFindList(drain_keys, [objectKey]);
     
     // update the bject's power draw
     if (object_num > -1) {
-        device_draws = llListReplaceList(device_draws, [powerLevel], object_num,object_num);
+        drain_draws = llListReplaceList(drain_draws, [powerLevel], object_num,object_num);
         power_level = calculate_power();
         if ((power_level > power_sourced) | (power_level > power_capacity)) {
             cut_all_power();
@@ -287,23 +288,27 @@ default
                 presentDisonnectMenu(objectKey);
             } else if (menuIdentifier == DISCONNECT) {
                 sayDebug("listen DISCONNECT from "+name+": "+message);
-                llRegionSayTo(llList2Key(device_keys, (integer)message), POWER_CHANNEL, DISCONNECT+ACK);
+                llRegionSayTo(llList2Key(drain_keys, (integer)message), POWER_CHANNEL, DISCONNECT+ACK);
+            } else if (trimMessageButton(message) == DEBUG) {
+                debug_state = !debug_state;
             } else {
                 sayDebug("listen did not handle "+message);
             }
         } else if (channel == POWER_CHANNEL) {
             if (message == PING+REQ) {
                 sayDebug("ping req");
-                llRegionSayTo(objectKey, POWER_CHANNEL, PING+ACK);
+                llRegionSayTo(objectKey, POWER_CHANNEL, PING+ACK+"["+(string)power_capacity+"]");
             } else if (message == CONNECT+REQ) {
                 sayDebug("connect req");
-                add_device(objectKey, name);
+                add_drain(objectKey, name);
             } else if (message == DISCONNECT+REQ) {
                 sayDebug("disconnect req");
                 remove_device(objectKey, name);
             } else if (trimMessageParameters(message) == POWER+REQ) {
                 sayDebug("power req");
                 handle_power_request(objectKey, name, getMessageParameter(message));
+            } else {
+                sayDebug("did not handle power channel message: "+message);
             }
         }
     }
