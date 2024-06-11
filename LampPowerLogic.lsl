@@ -179,6 +179,7 @@ send_ping_req() {
     sayDebug ("ping_req");
     known_source_keys = [];
     known_source_names = [];
+    llSay(POWER_CHANNEL, PING+REQ);
 }
 
 add_known_source(string name, key objectKey, integer power) {
