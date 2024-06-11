@@ -15,8 +15,8 @@ string DEBUG = "Debug";
 list drain_keys;
 list drain_names;
 list drain_draws; // how much power each device wants
-integer power_sourced = 1000; // how much power we are getting from sources
-integer power_capacity = 1000; // how much power we can transfer toal
+integer power_sourced = 800; // how much power we are getting from sources
+integer power_capacity = 800; // how much power we can transfer toal
 integer power_level = 0;
 
 integer dialog_channel;
@@ -200,7 +200,6 @@ add_drain(key objectKey, string objectName) {
     drain_names = drain_names + [objectName];
     drain_draws = drain_draws + [0];
     llRegionSayTo(objectKey, POWER_CHANNEL, CONNECT+ACK+"["+(string)power_capacity+"]");
-    list_devices();
 }
 
 remove_device(key objectKey, string objectName) {
@@ -251,9 +250,7 @@ handle_power_request(key objectKey, string objectName, integer powerLevel) {
     } else {
         sayDebug("object was not connected");
         llRegionSayTo(objectKey, POWER_CHANNEL, POWER+ACK+"[0]");
-        // *** should send POWER+NACK but that hasn't been defined
     }
-    report_status();
 }
 
 default
