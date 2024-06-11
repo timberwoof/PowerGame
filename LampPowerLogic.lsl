@@ -218,12 +218,17 @@ report_status() {
             "from power source " + my_source_name + ".");
 }
 
-switch_power() {
+set_power(integer new_power_state) {
+    power_state = new_power_state;
     if (power_state) {
-        llRegionSayTo(my_source_key, POWER_CHANNEL, POWER+REQ+"[0]");
-    } else {
         llRegionSayTo(my_source_key, POWER_CHANNEL, POWER+REQ+"["+(string)power_ask+"]");
+    } else {
+        llRegionSayTo(my_source_key, POWER_CHANNEL, POWER+REQ+"[0]");
     }
+}
+
+toggle_power() {
+    set_power(!power_state);
 }
 
 default
@@ -235,8 +240,10 @@ default
         llListen(POWER_CHANNEL, "", NULL_KEY, "");
         my_source_key = NULL_KEY;
         my_source_name = NONE;
-        power_state = OFF;
+        set_power(OFF);
         connected = FALSE;
+        llMessageLinked(LINK_SET, power_draw, "Power", NULL_KEY);
+        send_ping_req();
     }
 
     touch_start(integer total_number)
@@ -269,7 +276,7 @@ default
                 sayDebug("listen CONNECT from "+name+": "+message);
                 llRegionSayTo(llList2Key(known_source_keys, (integer)message), POWER_CHANNEL, CONNECT+REQ);
             } else if (trimMessageButton(message) == POWER) {
-                switch_power();
+                toggle_power();
             } else if (trimMessageButton(message) == DEBUG) {
                 debug_state = !debug_state;
             } else if (trimMessageButton(message) == DEBUG) {
@@ -286,10 +293,12 @@ default
                 my_source_key = objectKey;
                 my_source_name = name;
                 connected = TRUE;
+                set_power(power_state); // does this even make sense?
             } else if (trimmed_message == DISCONNECT+ACK) {
                 my_source_key = NULL_KEY;
                 my_source_name = NONE;
                 connected = FALSE;
+                set_power(OFF);
             } else if (trimmed_message == POWER+ACK) {
                 power_draw = getMessageParameter(message);
                 power_state = (connected & (power_draw == power_ask));
