@@ -293,6 +293,7 @@ default
             } else if (trimmed_message == POWER+ACK) {
                 power_draw = getMessageParameter(message);
                 power_state = (connected & (power_draw == power_ask));
+                llMessageLinked(LINK_SET, power_draw, "Power", NULL_KEY);
                 sayDebug("listen "+message+" "+(string)power_draw+" results in  power state:"+(string)power_state);
             }
         }
