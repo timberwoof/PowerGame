@@ -254,15 +254,16 @@ add_known_source(string name, key objectKey, integer power) {
 add_source(key objectKey, string objectName, integer source_rate) {
     // respond to Connect-ACK
     sayDebug("add_source:"+objectName+" "+(string)source_rate+" watts");
-    integer i;
-    i = llListFindList(known_source_keys, [objectKey]);
-    if (i < 0) {
-        sayDebug("Soure "+objectName+" was not known."); // error
+    if (llListFindList(known_source_keys, [objectKey]) < 0) {
+        sayDebug(objectName+" was not known."); // error
         return;
     }
-    i = llListFindList(my_source_keys, [objectKey]);
-    if (i >= 0) {
-        sayDebug("Source "+objectName+" was already connected."); // earning
+    if (llListFindList(my_source_keys, [objectKey]) >= 0) {
+        sayDebug(objectName+" was already connected as a Source."); // warning
+        return;
+    }
+    if (llListFindList(drain_keys, [objectKey]) >= 0) {
+        sayDebug(objectName+" was already connected as a Drain."); // warning
         return;
     }
     my_source_keys = my_source_keys + [objectKey];
@@ -273,11 +274,12 @@ add_source(key objectKey, string objectName, integer source_rate) {
 
 remove_source(key objectKey, string objectName) {
     // Respond to Disonnect-ACK
-    integer i = llListFindList(known_source_keys, [objectKey]);
+    integer i = llListFindList(my_source_keys, [objectKey]);
     if (i > -1) {
         my_source_keys = llDeleteSubList(my_source_keys, i, i);
         my_source_names = llDeleteSubList(my_source_names, i, i);
         my_source_powers = llDeleteSubList(my_source_powers, i, i);        
+        sayDebug("Source "+objectName+" was disconnected.");
     } else {
         sayDebug("Source "+objectName+" was not connected."); // warning
     }
@@ -286,12 +288,14 @@ remove_source(key objectKey, string objectName) {
 
 add_drain(key objectKey, string objectName) {
     //Respond to Connect-REQ
-    integer i = llListFindList(drain_keys, [objectKey]);
-    if (i > -1) {
-        sayDebug("device "+objectName+" was already in list. Reconnecting."); // earning
-        drain_keys = llDeleteSubList(drain_keys, i, i);
-        drain_names = llDeleteSubList(drain_names, i, i);
-        drain_powers = llDeleteSubList(drain_powers, i, i);
+    if (llListFindList(drain_keys, [objectKey]) > -1) {
+        sayDebug(objectName+" was already connecred as a Drain. Reconnecting."); // warning
+        llRegionSayTo(objectKey, POWER_CHANNEL, CONNECT+ACK+"["+(string)power_capacity+"]");
+        return;
+    }
+    if (llListFindList(my_source_keys, [objectKey]) > -1) {
+        sayDebug(objectName+" was already connecred as a Source."); // warning
+        return;
     }
     drain_keys = drain_keys + [objectKey];
     drain_names = drain_names + [objectName];
@@ -307,6 +311,7 @@ remove_drain(key objectKey, string objectName) {
         drain_keys = llDeleteSubList(drain_keys, i, i);
         drain_names = llDeleteSubList(drain_names, i, i);
         drain_powers = llDeleteSubList(drain_powers, i, i);        
+        sayDebug("Drain "+objectName+" was disconnected."); // waning
     } else {
         sayDebug("Drain "+objectName+" was not connected."); // waning
     }
@@ -336,7 +341,6 @@ handle_power_request(key objectKey, string objectName, integer powerLevel) {
         sayDebug("object was not connected");
         powerLevel = 0;
     }
-    report_status();
     llRegionSayTo(objectKey, POWER_CHANNEL, POWER+ACK+"["+(string)powerLevel+"]");
 }
 
@@ -520,7 +524,9 @@ default
                 llRegionSayTo(llList2Key(my_source_keys, (integer)message), POWER_CHANNEL, DISCONNECT+REQ);
             } else if (menuIdentifier == DISCONNECT_DRAIN) {
                 sayDebug("listen DISCONNECT from "+name+": "+message);
-                llRegionSayTo(llList2Key(drain_keys, (integer)message), POWER_CHANNEL, DISCONNECT+ACK);
+                key drain_key = llList2Key(drain_keys, (integer)message);
+                llRegionSayTo(drain_key, POWER_CHANNEL, DISCONNECT+ACK);
+                remove_drain(drain_key, name);
             } else if (trimMessageButton(message) == POWER) {
                 switch_power();
             } else if (trimMessageButton(message) == DEBUG) {
