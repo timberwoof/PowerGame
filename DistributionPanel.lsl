@@ -354,14 +354,7 @@ handle_power_request(key objectKey, string objectName, integer powerLevel) {
             power_drain = power_drain + llList2Integer(drain_powers, i);
         }
         
-        // Deal with overload
-        // We don't know yet if power requests are fulfilled
-        if (power_drain > my_source_power_capacity) {
-            sayDebug("power_drain:"+(string)power_drain+" > my_source_power_capacity:"+(string)my_source_power_capacity);
-            cut_all_power();
-        } else {
-            request_power();
-        }
+        request_power();
     } else {
         sayDebug("object was not connected");
         powerLevel = 0;
@@ -384,12 +377,6 @@ handle_power_ack(key source_key, string source_name, integer source_power) {
     num_my_sources = llGetListLength(my_source_keys);
     for (i = i; i < num_my_sources; i = i + 1) {
         my_source_power_rate = my_source_power_rate + llList2Integer(my_source_power_supplies, i);
-    }
-
-    // Deal with overload
-    if (power_drain > my_source_power_rate) {
-        sayDebug("power_drain:"+(string)power_drain+" > my_source_power_rate:"+(string)my_source_power_rate);
-        cut_all_power();
     }
 }
 
@@ -464,9 +451,10 @@ list_drains() {
     }
 }
 
-switch_power() {
+switch_power(integer new_power_state) {
+    sayDebug("switch_power "+(string)new_power_state);
+    power_state = new_power_state;
     integer i;
-    power_state = !power_state;
     if (power_state) {
         // switch on
         // request power from sourcs
@@ -478,7 +466,6 @@ switch_power() {
             llRegionSayTo(drain_key, POWER_CHANNEL, POWER+ACK+"["+(string)rate+"]");
         }
     } else {
-        // switch off
         // cut power to all the drains
         for (i = 0; i < num_drains; i = i + 1) {
             key drain_key = llList2Key(drain_keys, i);
@@ -492,14 +479,32 @@ switch_power() {
     }
 }
 
-cut_all_power() {
-    sayDebug("cut_all_power");
+toggle_power() {
+    switch_power(!power_state);
+}
+
+monitor_power() {
+    integer cut = FALSE;
     integer i;
-    for (i = i; i < num_drains; i = i + 1) {
-        key objectKey = llList2Key(drain_keys, i);
-        llRegionSayTo(objectKey, POWER_CHANNEL, POWER+ACK+"[0]");
+    power_drain = 0;
+    for (i = 0; i < num_drains; i = i + 1) {
+        power_drain = power_drain + llList2Integer(drain_powers, i);
+        llSay(0, llList2String(drain_names, i) + ": " + (string)llList2Integer(drain_powers, i)+" watts");
     }
-    // *** report zero power consumption to source
+
+    if (power_drain > my_source_power_rate) {
+        sayDebug("power_drain:"+(string)power_drain+" > my_source_power_rate:"+(string)my_source_power_rate);
+        cut = TRUE;
+    }
+
+    if (power_drain > my_source_power_capacity) {
+        sayDebug("power_drain:"+(string)power_drain+" > my_source_power_capacity:"+(string)my_source_power_capacity);
+        cut = TRUE;
+    }
+
+    if (cut) {
+        switch_power(FALSE);
+    }
     
 }
 
@@ -534,6 +539,7 @@ default
         llSetTimerEvent(1);
         llListen(POWER_CHANNEL, "", NULL_KEY, "");
         send_ping_req();
+        llSetTimerEvent(10);
     }
 
     touch_start(integer total_number)
@@ -575,7 +581,7 @@ default
                 llRegionSayTo(drain_key, POWER_CHANNEL, DISCONNECT+ACK);
                 remove_drain(drain_key, name);
             } else if (trimMessageButton(message) == POWER) {
-                switch_power();
+                toggle_power();
             } else if (trimMessageButton(message) == DEBUG) {
                 debug_state = !debug_state;
             } else {
@@ -611,5 +617,6 @@ default
         if (now > menuTimeout) {
             resetMenu();
         }
+        monitor_power();
     }
 }
