@@ -3,7 +3,7 @@
 
 integer POWER_CHANNEL = -654647;
 integer clock_interval = 1;
-integer power_ask = 100;
+integer power_ask = 500;
 integer power_draw = 0;
 
 string REQ = "-REQ";
@@ -179,7 +179,7 @@ send_ping_req() {
     sayDebug ("ping_req");
     known_source_keys = [];
     known_source_names = [];
-    llSay(POWER_CHANNEL, PING+REQ);
+    llShout(POWER_CHANNEL, PING+REQ);
 }
 
 add_known_source(string name, key objectKey, integer power) {
