@@ -20,25 +20,25 @@ string DEBUG = "Debug";
 
 list known_source_keys;
 list known_source_names;
-list known_source_powers;
+list known_source_power_capacities;
 integer num_known_sources;
 
 list my_source_keys;
 list my_source_names;
-list my_source_powers;
+list my_source_power_capacities;
+list my_source_power_supplies;
 integer num_my_sources;
+integer my_source_power_capacity = 0;
+integer my_source_power_rate = 0; // how much power we are getting from sources
 integer power_state;
 
 list drain_keys;
 list drain_names;
 list drain_powers; // how much power each device wants
 integer num_drains;
-
-integer source_rate = 1000; // how much power we are getting from sources
-integer power_capacity = 1000; // how much power we can transfer toal
-integer power_level = 0;
-integer power_ask;
 integer power_drain;
+
+integer power_capacity = 1000; // how much power we can transfer total
 
 integer dialog_channel;
 integer dialog_listen;
@@ -61,7 +61,7 @@ sayDebug(string message) {
 
 
 // ****************************************
-// Menus
+// Menu and Message Utilities
 
 string menuCheckbox(string title, integer onOff)
 // make checkbox menu item out of a button title and boolean state
@@ -199,7 +199,7 @@ presentConnectSourceMenu(key whoClicked) {
     for (i = 0; i < num_known_sources; i = i + 1) {
         message = message + "\n" + (string)i + " " + 
             llList2String(known_source_names, i) + " (" + 
-            llList2String(known_source_powers, i) + " watts)";
+            llList2String(known_source_power_capacities, i) + " watts)";
         buttons = buttons + [(string)i];
     }
     setUpMenu(CONNECT_SOURCE, whoClicked, message, buttons);    
@@ -210,7 +210,7 @@ presentDisonnectSourceMenu(key whoClicked) {
     integer i;
     list buttons = [];
     for (i = 0; i < num_my_sources; i = i + 1) {
-        message = message + "\n" + (string)i + " " + llList2String(my_source_names, i) + " " + llList2String(my_source_powers, i) + "W";
+        message = message + "\n" + (string)i + " " + llList2String(my_source_names, i) + " " + llList2String(my_source_power_capacities, i) + "W";
         buttons = buttons + [(string)i];
     }
     setUpMenu(DISCONNECT_SOURCE, whoClicked, message, buttons);    
@@ -247,13 +247,25 @@ add_known_source(string name, key objectKey, integer power) {
     sayDebug ("add_known_source:"+name);
     known_source_keys = known_source_keys + [objectKey];
     known_source_names = known_source_names + [name];
-    known_source_powers = known_source_powers + [power]; 
+    known_source_power_capacities = known_source_power_capacities + [power]; 
     num_known_sources = llGetListLength(known_source_keys);
+}
+
+calculate_power_capacity() {
+    num_my_sources = llGetListLength(my_source_keys);
+    my_source_power_capacity = 0;
+    integer i;
+    for (i = i; i < num_my_sources; i = i + 1) {
+        my_source_power_capacity = my_source_power_capacity + llList2Integer(my_source_power_capacities, i);
+    }
+    sayDebug("calculate_power_capacity:"+(string)my_source_power_capacity);
 }
 
 add_source(key objectKey, string objectName, integer source_rate) {
     // respond to Connect-ACK
     sayDebug("add_source:"+objectName+" "+(string)source_rate+" watts");
+    
+    // Handle bad requests
     if (llListFindList(known_source_keys, [objectKey]) < 0) {
         sayDebug(objectName+" was not known."); // error
         return;
@@ -266,10 +278,12 @@ add_source(key objectKey, string objectName, integer source_rate) {
         sayDebug(objectName+" was already connected as a Drain."); // warning
         return;
     }
+    
+    // register the source
     my_source_keys = my_source_keys + [objectKey];
     my_source_names = my_source_names + [objectName];
-    my_source_powers = my_source_powers + source_rate;
-    num_my_sources = llGetListLength(my_source_keys);
+    my_source_power_capacities = my_source_power_capacities + source_rate;
+    calculate_power_capacity();
 }
 
 remove_source(key objectKey, string objectName) {
@@ -278,12 +292,12 @@ remove_source(key objectKey, string objectName) {
     if (i > -1) {
         my_source_keys = llDeleteSubList(my_source_keys, i, i);
         my_source_names = llDeleteSubList(my_source_names, i, i);
-        my_source_powers = llDeleteSubList(my_source_powers, i, i);        
+        my_source_power_capacities = llDeleteSubList(my_source_power_capacities, i, i);        
         sayDebug("Source "+objectName+" was disconnected.");
     } else {
         sayDebug("Source "+objectName+" was not connected."); // warning
     }
-    num_my_sources = llGetListLength(my_source_keys);
+    calculate_power_capacity();
 }
 
 add_drain(key objectKey, string objectName) {
@@ -323,19 +337,30 @@ handle_power_request(key objectKey, string objectName, integer powerLevel) {
     // Respond to Power-REQ
     sayDebug(objectName+" requests "+(string)powerLevel+" watts");
     integer i;
-    integer object_num = -1;
+    integer drain_num = -1;
     
-    // find the device's index in the list
-    object_num = llListFindList(drain_keys, [objectKey]);
+    // find the drain's index in the list
+    drain_num = llListFindList(drain_keys, [objectKey]);
     
-    // update the bject's power draw
-    if (object_num > -1) {
-        drain_powers = llListReplaceList(drain_powers, [powerLevel], object_num,object_num);
-        power_level = calculate_drain();
-        if ((power_level > source_rate) | (power_level > power_capacity)) {
+    // update the drain's power draw
+    if (drain_num > -1) {
+        drain_powers = llListReplaceList(drain_powers, [powerLevel], drain_num, drain_num);
+        
+        // reclaculate total power drain
+        power_drain = 0;
+        integer i;
+        num_drains = llGetListLength(drain_keys);
+        for (i = i; i < num_drains; i = i + 1) {
+            power_drain = power_drain + llList2Integer(drain_powers, i);
+        }
+        
+        // Deal with overload
+        // We don't know yet if power requests are fulfilled
+        if (power_drain > my_source_power_capacity) {
+            sayDebug("power_drain:"+(string)power_drain+" > my_source_power_capacity:"+(string)my_source_power_capacity);
             cut_all_power();
         } else {
-            report_power_use();
+            request_power();
         }
     } else {
         sayDebug("object was not connected");
@@ -344,11 +369,28 @@ handle_power_request(key objectKey, string objectName, integer powerLevel) {
     llRegionSayTo(objectKey, POWER_CHANNEL, POWER+ACK+"["+(string)powerLevel+"]");
 }
 
-handle_power_ack(string message) {
-    // Respond to Power-ACK
-    power_drain = getMessageParameter(message);
-    power_state = (num_known_sources & (power_drain == power_ask));
-    sayDebug("listen "+message+" "+(string)power_drain+" results in  power state:"+(string)power_state);
+handle_power_ack(key source_key, string source_name, integer source_power) {
+    sayDebug(source_name+" supplies "+(string)source_power+" watts");
+    integer object_num = llListFindList(my_source_keys, [source_key]);
+    if (object_num < 0) {
+        sayDebug(source_name+" was not in list of sources."); // error
+        return;
+    }
+    my_source_power_supplies = llListReplaceList(my_source_power_supplies, [source_power], object_num, object_num);
+    
+    // reclaculate total power drain
+    my_source_power_rate = 0;
+    integer i;
+    num_my_sources = llGetListLength(my_source_keys);
+    for (i = i; i < num_my_sources; i = i + 1) {
+        my_source_power_rate = my_source_power_rate + llList2Integer(my_source_power_capacities, i);
+    }
+
+    // Deal with overload
+    if (power_drain > my_source_power_rate) {
+        sayDebug("power_drain:"+(string)power_drain+" > my_source_power_rate:"+(string)my_source_power_rate);
+        cut_all_power();
+    }
 }
 
 // ****************************************
@@ -366,14 +408,13 @@ report_status() {
     llSay(0,"*****");
     llSay(0,"Device Report for "+llGetObjectName()+":");
     llSay(0,"Maximum Power: "+ (string)power_capacity + " watts");
-    llSay(0,"Input Power: "+ (string)source_rate + " watts");
-    llSay(0,"Output Power: "+ (string)power_level + " watts");
+    llSay(0,"Input Power: "+ (string)my_source_power_rate + " watts");
+    llSay(0,"Output Power: "+ (string)power_drain + " watts");
     list_known_sources();
     list_my_sources();
     list_drains();
     llSay(0,"*****");
 }
-
 
 list_known_sources() {
     llSay(0,"-----");
@@ -381,7 +422,7 @@ list_known_sources() {
     integer i;
     if (num_known_sources > 0) {
         for (i = 0; i < num_known_sources; i = i + 1) {
-            llSay(0, llList2String(known_source_names, i) + ": " + (string)llList2Integer(known_source_powers, i)+" watts");
+            llSay(0, llList2String(known_source_names, i) + ": " + (string)llList2Integer(known_source_power_capacities, i)+" watts");
         }
     } else {
         llSay(0,"No Power Sources Known. Do Ping");
@@ -394,21 +435,12 @@ list_my_sources() {
     integer i;
     if (num_my_sources > 0) {
         for (i = 0; i < num_my_sources; i = i + 1) {
-            llSay(0, llList2String(my_source_names, i) + ": " + (string)llList2Integer(my_source_powers, i)+" watts");
+            llSay(0, llList2String(my_source_names, i) + ": " + (string)llList2Integer(my_source_power_capacities, i)+" watts");
         }
     } else {
         llSay(0,"No Power Sources Connected. Connect a power source.");
     }
-}
-
-integer calculate_drain() {
-    integer power_drain = 0;
-    integer i;
-    num_drains = llGetListLength(drain_keys);
-    for (i = i; i < num_drains; i = i + 1) {
-        power_drain = power_drain + llList2Integer(drain_powers, i);
-    }
-    return power_drain;    
+    llSay(0, "Consuming "+(string)my_source_power_rate+" watts of "+(string)my_source_power_capacity+" watts maximum");
 }
 
 list_drains() {
@@ -432,21 +464,23 @@ switch_power() {
     integer i;
     power_state = !power_state;
     if (power_state) {
-        for (i = 0; i < num_my_sources; i = i + 1) {
-            key source_key = llList2Key(my_source_keys, i);
-            integer rate_request = llFloor(source_rate / num_my_sources * 1.1);
-            llRegionSayTo(source_key, POWER_CHANNEL, POWER+REQ+"["+(string)rate_request+"]");
-        }
+        // switch on
+        // request power from sourcs
+        request_power();
+        // grant power to drains
         for (i = 0; i < num_drains; i = i + 1) {
             key drain_key = llList2Key(drain_keys, i);
             integer rate = llList2Integer(drain_powers, i);
             llRegionSayTo(drain_key, POWER_CHANNEL, POWER+ACK+"["+(string)rate+"]");
         }
     } else {
+        // switch off
+        // cut power to all the drains
         for (i = 0; i < num_drains; i = i + 1) {
             key drain_key = llList2Key(drain_keys, i);
             llRegionSayTo(drain_key, POWER_CHANNEL, POWER+ACK+"[0]");
         }
+        // cut power from all the sources
         for (i = 0; i < num_my_sources; i = i + 1) {
             key source_key = llList2Key(my_source_keys, i);
             llRegionSayTo(source_key, POWER_CHANNEL, POWER+REQ+"[0]");
@@ -465,17 +499,25 @@ cut_all_power() {
     
 }
 
-report_power_use() {
+request_power() {
     // distribute the current power use over the sources we have connected
+    sayDebug("request_power");
     integer i;
+    
+    // Gather up the power capacity of connected sources
     integer total_source_capacity = 0;
     for (i = 0; i < num_my_sources; i = i + 1) {
-        total_source_capacity = total_source_capacity + llList2Integer(my_source_powers, i);
+        total_source_capacity = total_source_capacity + llList2Integer(my_source_power_capacities, i);
     }
+    sayDebug("request_power total_source_capacity:"+(string)total_source_capacity);
+    
+    // Distribute required power_drain evenly over the connected sources
     for (i = 0; i < num_my_sources; i = i + 1) {
         key source_key = llList2Key(my_source_keys, i);
-        integer source_rate = llFloor(power_level * llList2Integer(my_source_powers, i) / total_source_capacity * 1.1);
+        integer source_rate = llFloor(power_drain * llList2Integer(my_source_power_capacities, i) / total_source_capacity * 1.1);
+        string source_name = llList2String(my_source_names, i);
         string source_message = POWER+REQ+"["+(string)source_rate+"]";
+        sayDebug("request_power requesting "+(string)source_rate+" from "+source_name+"   "+source_message);
         llRegionSayTo(source_key, POWER_CHANNEL, source_message);
     }    
 }
@@ -487,6 +529,7 @@ default
         sayDebug("state_entry");
         llSetTimerEvent(1);
         llListen(POWER_CHANNEL, "", NULL_KEY, "");
+        send_ping_req();
     }
 
     touch_start(integer total_number)
@@ -552,7 +595,7 @@ default
             } else if (trimmed_message == POWER+REQ) {
                 handle_power_request(objectKey, name, parameter);
             } else if (trimmed_message == POWER+ACK) {
-                handle_power_ack(message);
+                handle_power_ack(objectKey, name, parameter);
             } else {
                 sayDebug("did not handle power channel message:"+message);
             }
