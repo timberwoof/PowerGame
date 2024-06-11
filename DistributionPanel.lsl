@@ -383,7 +383,7 @@ handle_power_ack(key source_key, string source_name, integer source_power) {
     integer i;
     num_my_sources = llGetListLength(my_source_keys);
     for (i = i; i < num_my_sources; i = i + 1) {
-        my_source_power_rate = my_source_power_rate + llList2Integer(my_source_power_capacities, i);
+        my_source_power_rate = my_source_power_rate + llList2Integer(my_source_power_supplies, i);
     }
 
     // Deal with overload
@@ -435,13 +435,17 @@ list_my_sources() {
     integer i;
     if (num_my_sources > 0) {
         for (i = 0; i < num_my_sources; i = i + 1) {
-            llSay(0, llList2String(my_source_names, i) + ": " + (string)llList2Integer(my_source_power_capacities, i)+" watts");
+            integer capacity = llList2Integer(my_source_power_capacities, i);
+            integer supply = llList2Integer(my_source_power_supplies, i);
+            llSay(0, llList2String(my_source_names, i) + " supplying " +  (string)supply + " watts of " + (string)capacity);
         }
     } else {
         llSay(0,"No Power Sources Connected. Connect a power source.");
     }
-    llSay(0, "Consuming "+(string)my_source_power_rate+" watts of "+(string)my_source_power_capacity+" watts maximum");
+    llSay(0, "Supply: "+(string)my_source_power_rate+" watts of "+(string)my_source_power_capacity+" watts maximum");
 }
+
+
 
 list_drains() {
     llSay(0,"-----");
