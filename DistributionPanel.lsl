@@ -52,7 +52,7 @@ integer menuChannel;
 integer menuListen;
 integer menuTimeout;
 
-integer debug_state = TRUE;
+integer debug_state = FALSE;
 sayDebug(string message) {
     if (debug_state) {
         llSay(0,message);
@@ -359,6 +359,11 @@ handle_power_request(key objectKey, string objectName, integer powerLevel) {
         sayDebug("object was not connected");
         powerLevel = 0;
     }
+    
+    if (!power_state) {
+        sayDebug("power was off");
+        powerLevel = 0;
+    }
     llRegionSayTo(objectKey, POWER_CHANNEL, POWER+ACK+"["+(string)powerLevel+"]");
 }
 
@@ -391,18 +396,6 @@ string power_state_to_string(integer power_state) {
     }
 }
 
-report_status() {
-    llSay(0,"*****");
-    llSay(0,"Device Report for "+llGetObjectName()+":");
-    llSay(0,"Maximum Power: "+ (string)power_capacity + " watts");
-    llSay(0,"Input Power: "+ (string)my_source_power_rate + " watts");
-    llSay(0,"Output Power: "+ (string)power_drain + " watts");
-    list_known_sources();
-    list_my_sources();
-    list_drains();
-    llSay(0,"*****");
-}
-
 list_known_sources() {
     llSay(0,"-----");
     llSay(0,"Known Power Sources:");
@@ -432,8 +425,6 @@ list_my_sources() {
     llSay(0, "Supply: "+(string)my_source_power_rate+" watts of "+(string)my_source_power_capacity+" watts maximum");
 }
 
-
-
 list_drains() {
     llSay(0,"-----");
     llSay(0,"Power Drains:");
@@ -449,6 +440,18 @@ list_drains() {
     } else {
         llSay(0,"No Power Drains Connected.");
     }
+}
+
+report_status() {
+    llSay(0,"*****");
+    llSay(0,"Device Report for "+llGetObjectName()+":");
+    llSay(0,"Maximum Power: "+ (string)power_capacity + " watts");
+    llSay(0,"Input Power: "+ (string)my_source_power_rate + " watts");
+    llSay(0,"Output Power: "+ (string)power_drain + " watts");
+    list_known_sources();
+    list_my_sources();
+    list_drains();
+    llSay(0,"*****");
 }
 
 switch_power(integer new_power_state) {
@@ -489,7 +492,7 @@ monitor_power() {
     power_drain = 0;
     for (i = 0; i < num_drains; i = i + 1) {
         power_drain = power_drain + llList2Integer(drain_powers, i);
-        llSay(0, llList2String(drain_names, i) + ": " + (string)llList2Integer(drain_powers, i)+" watts");
+        sayDebug(llList2String(drain_names, i) + ": " + (string)llList2Integer(drain_powers, i)+" watts");
     }
 
     if (power_drain > my_source_power_rate) {
