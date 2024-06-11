@@ -251,11 +251,44 @@ add_known_source(string name, key objectKey, integer power) {
     num_known_sources = llGetListLength(known_source_keys);
 }
 
+add_source(key objectKey, string objectName, integer source_rate) {
+    // respond to Connect-ACK
+    sayDebug("add_source:"+objectName+" "+(string)source_rate+" watts");
+    integer i;
+    i = llListFindList(known_source_keys, [objectKey]);
+    if (i < 0) {
+        sayDebug("Soure "+objectName+" was not known."); // error
+        return;
+    }
+    i = llListFindList(my_source_keys, [objectKey]);
+    if (i >= 0) {
+        sayDebug("Source "+objectName+" was already connected."); // earning
+        return;
+    }
+    my_source_keys = my_source_keys + [objectKey];
+    my_source_names = my_source_names + [objectName];
+    my_source_powers = my_source_powers + source_rate;
+    num_my_sources = llGetListLength(my_source_keys);
+}
+
+remove_source(key objectKey, string objectName) {
+    // Respond to Disonnect-ACK
+    integer i = llListFindList(known_source_keys, [objectKey]);
+    if (i > -1) {
+        my_source_keys = llDeleteSubList(my_source_keys, i, i);
+        my_source_names = llDeleteSubList(my_source_names, i, i);
+        my_source_powers = llDeleteSubList(my_source_powers, i, i);        
+    } else {
+        sayDebug("Source "+objectName+" was not connected."); // warning
+    }
+    num_my_sources = llGetListLength(my_source_keys);
+}
+
 add_drain(key objectKey, string objectName) {
     //Respond to Connect-REQ
     integer i = llListFindList(drain_keys, [objectKey]);
     if (i > -1) {
-        sayDebug("device "+objectName+" was already in list");
+        sayDebug("device "+objectName+" was already in list. Reconnecting."); // earning
         drain_keys = llDeleteSubList(drain_keys, i, i);
         drain_names = llDeleteSubList(drain_names, i, i);
         drain_powers = llDeleteSubList(drain_powers, i, i);
@@ -267,29 +300,6 @@ add_drain(key objectKey, string objectName) {
     llRegionSayTo(objectKey, POWER_CHANNEL, CONNECT+ACK+"["+(string)power_capacity+"]");
 }
 
-add_source(key objectKey, string objectName, integer source_rate) {
-    // respond to Connect-ACK
-    sayDebug("add_source:"+objectName+" "+(string)source_rate+" watts");
-    integer i;
-    i = llListFindList(known_source_keys, [objectKey]);
-    if (i < 0) {
-        sayDebug("device "+objectName+" was not known.");
-        return;
-    }
-    
-    i = llListFindList(my_source_keys, [objectKey]);
-    if (i > -1) {
-        sayDebug("device "+objectName+" was already in list");
-        my_source_keys = llDeleteSubList(my_source_keys, i, i);
-        my_source_names = llDeleteSubList(my_source_names, i, i);
-        my_source_powers = llDeleteSubList(my_source_powers, i, i);
-    }
-    my_source_keys = my_source_keys + [objectKey];
-    my_source_names = my_source_names + [objectName];
-    my_source_powers = my_source_powers + source_rate;
-    num_my_sources = llGetListLength(my_source_keys);
-}
-
 remove_drain(key objectKey, string objectName) {
     // respond to Disconnect-REQ
     integer i = llListFindList(drain_keys, [objectKey]);
@@ -297,20 +307,11 @@ remove_drain(key objectKey, string objectName) {
         drain_keys = llDeleteSubList(drain_keys, i, i);
         drain_names = llDeleteSubList(drain_names, i, i);
         drain_powers = llDeleteSubList(drain_powers, i, i);        
+    } else {
+        sayDebug("Drain "+objectName+" was not connected."); // waning
     }
     num_drains = llGetListLength(drain_keys);
     llRegionSayTo(objectKey, POWER_CHANNEL, DISCONNECT+ACK);
-}
-
-remove_source(key objectKey, string objectName) {
-    // Respond to Disonnect-ACK
-    integer i = llListFindList(known_source_keys, [objectKey]);
-    if (i > -1) {
-        known_source_keys = llDeleteSubList(known_source_keys, i, i);
-        known_source_names = llDeleteSubList(known_source_names, i, i);
-        known_source_powers = llDeleteSubList(known_source_powers, i, i);        
-    }
-    num_known_sources = llGetListLength(known_source_keys);
 }
 
 handle_power_request(key objectKey, string objectName, integer powerLevel) {
@@ -508,7 +509,7 @@ default
             } else if (message == CONNECT_SOURCE) {
                 presentConnectSourceMenu(objectKey);
             } else if (message == DISCONNECT_SOURCE) {
-                presentDisonnectDrainMenu(objectKey);
+                presentDisonnectSourceMenu(objectKey);
             } else if (message == DISCONNECT_DRAIN) {
                 presentDisonnectDrainMenu(objectKey);
             } else if (menuIdentifier == CONNECT_SOURCE) {
@@ -516,7 +517,7 @@ default
                 llRegionSayTo(llList2Key(known_source_keys, (integer)message), POWER_CHANNEL, CONNECT+REQ);
             } else if (menuIdentifier == DISCONNECT_SOURCE) {
                 sayDebug("listen DISCONNECT from "+name+": "+message);
-                llRegionSayTo(llList2Key(drain_keys, (integer)message), POWER_CHANNEL, DISCONNECT+REQ);
+                llRegionSayTo(llList2Key(my_source_keys, (integer)message), POWER_CHANNEL, DISCONNECT+REQ);
             } else if (menuIdentifier == DISCONNECT_DRAIN) {
                 sayDebug("listen DISCONNECT from "+name+": "+message);
                 llRegionSayTo(llList2Key(drain_keys, (integer)message), POWER_CHANNEL, DISCONNECT+ACK);
