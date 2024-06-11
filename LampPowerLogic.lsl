@@ -45,7 +45,7 @@ integer menuChannel;
 integer menuListen;
 integer menuTimeout;
 
-integer debug_state = TRUE;
+integer debug_state = FALSE;
 sayDebug(string message) {
     if (debug_state) {
         llSay(0,message);
@@ -179,7 +179,6 @@ send_ping_req() {
     sayDebug ("ping_req");
     known_source_keys = [];
     known_source_names = [];
-    llSay(POWER_CHANNEL, PING+REQ);
 }
 
 add_known_source(string name, key objectKey, integer power) {
