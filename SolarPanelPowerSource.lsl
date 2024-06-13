@@ -342,11 +342,15 @@ track() {
         float time = (llGetUnixTime() % 14400) / 14400.0; // (Days)
         sayDebug("time:"+(string)time);
         float hours_per_day = 4.0;
-        float angle = time  / hours_per_day * 2 * PI; // seconds to hours to raians 
-        vector sunEuler = <angle, 0, 0>;
+        float Xangle = time  / hours_per_day * 2 * PI; // seconds to hours to raians 
+        vector sunEuler = <Xangle, 0, 0>;
         sunRot = llEuler2Rot(sunEuler);
-        sayDebug("angle:"+(string)angle+"  sunEuler:"+(string)sunEuler+"  sunRot:"+(string)sunRot);
+        vector div = sunEuler / myrot;
+        sayDebug("myrot:"+(string)myrot+"  div:"+(string)div);
     }
+    
+    // above  below
+    // 
     
     pointtosun(sunRot);
     //if (sunEuler.z > 0.10)
