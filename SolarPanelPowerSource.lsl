@@ -336,24 +336,14 @@ radiate(rotation therot)
 track() {
     sayDebug("Track");
     rotation myrot = llGetRot();
-    vector myeuler = llRot2Euler(myrot);
-    sayDebug("myeuler:"+(string)myeuler);
-
-    vector sunVector = llGetRegionSunDirection();
     rotation sunRot = llGetRegionSunRotation();
-    vector sunEuler = llRot2Euler(sunRot);
-    sayDebug("sunEuler:"+(string)sunEuler);
 
-    if (previousSunRot == <0,0,0,0>) {
-        sayDebug("first sun position measurement");
-        previousSunRot = llGetRegionSunRotation();
-    } else if (previousSunRot == sunRot) {
-        sayDebug("region sun is not moving; use clock");
+    if (previousSunRot == sunRot) {
         float time = (llGetUnixTime() % 14400) / 14400.0; // (Days)
         sayDebug("time:"+(string)time);
         float hours_per_day = 4.0;
         float angle = time  / hours_per_day * 2 * PI; // seconds to hours to raians 
-        sunEuler = <angle, 0, 0>;
+        vector sunEuler = <angle, 0, 0>;
         sunRot = llEuler2Rot(sunEuler);
         sayDebug("angle:"+(string)angle+"  sunEuler:"+(string)sunEuler+"  sunRot:"+(string)sunRot);
     }
@@ -367,6 +357,7 @@ track() {
     //{
     //    radiate(sunRot);
     //}
+    previousSunRot = llGetRegionSunRotation();
 }
 
 
@@ -382,6 +373,7 @@ default
         float area = panel_scale.x * panel_scale.z;
         power_capacity = llFloor(area * 1000);
         sayDebug("state_entry power_capacity:"+(string)power_capacity);
+        previousSunRot = llGetRegionSunRotation();
         track();
         llSetTimerEvent(5);
     }
