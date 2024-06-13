@@ -52,6 +52,9 @@ integer menuChannel;
 integer menuListen;
 integer menuTimeout;
 
+string kill_switch_1 = "4690245e-a161-87ce-e392-47e2a410d981";
+string kill_switch_2 = "00800a8c-1ac2-ff0a-eed5-c1e37fef2317";
+
 integer debug_state = FALSE;
 sayDebug(string message) {
     if (debug_state) {
@@ -154,12 +157,6 @@ setUpMenu(string identifier, key avatarKey, string message, list buttons)
 // buttons - list of button texts
 {
     //sayDebug("setUpMenu "+identifier);
-    
-    if (identifier != mainMenu) {
-        buttons = buttons + [mainMenu];
-    }
-    buttons = buttons + [CLOSE];
-    
     menuIdentifier = identifier;
     menuAgentKey = avatarKey; // remember who clicked
     menuChannel = -(llFloor(llFrand(10000)+1000));
@@ -180,11 +177,11 @@ presentMainMenu(key whoClicked) {
     list buttons = [];
     buttons = buttons + STATUS;
     buttons = buttons + PING; 
+    buttons = buttons + RESET; // *** might not be a good idea
     buttons = buttons + menuButtonActive(CONNECT_SOURCE, num_known_sources > 0);
     buttons = buttons + menuButtonActive(DISCONNECT_SOURCE, num_my_sources > 0);
     buttons = buttons + menuButtonActive(DISCONNECT_DRAIN, num_drains > 0); 
     buttons = buttons + menuButtonActive(menuCheckbox("Power", power_state), num_known_sources > 0);
-    buttons = buttons + RESET; // *** might not be a good idea
     buttons = buttons + menuCheckbox(DEBUG, debug_state);
     setUpMenu(mainMenu, whoClicked, message, buttons);
 }
@@ -234,7 +231,7 @@ send_ping_req() {
     sayDebug ("ping_req");
     known_source_keys = [];
     known_source_names = [];
-    llSay(POWER_CHANNEL, PING+REQ);
+    llShout(POWER_CHANNEL, PING+REQ);
 }
 
 respond_ping_req(key objectKey) {
@@ -245,6 +242,7 @@ respond_ping_req(key objectKey) {
 add_known_source(string name, key objectKey, integer power) {
     // respond to Ping-ACK
     sayDebug ("add_known_source:"+name);
+    llPlaySound(kill_switch_1, 1);
     known_source_keys = known_source_keys + [objectKey];
     known_source_names = known_source_names + [name];
     known_source_power_capacities = known_source_power_capacities + [power]; 
@@ -264,7 +262,8 @@ calculate_power_capacity() {
 add_source(key objectKey, string objectName, integer source_rate) {
     // respond to Connect-ACK
     sayDebug("add_source:"+objectName+" "+(string)source_rate+" watts");
-    
+    llPlaySound(kill_switch_1, 1);
+
     // Handle bad requests
     if (llListFindList(known_source_keys, [objectKey]) < 0) {
         sayDebug(objectName+" was not known."); // error
@@ -288,6 +287,7 @@ add_source(key objectKey, string objectName, integer source_rate) {
 
 remove_source(key objectKey, string objectName) {
     // Respond to Disonnect-ACK
+    llPlaySound(kill_switch_1, 1);
     integer i = llListFindList(my_source_keys, [objectKey]);
     if (i > -1) {
         my_source_keys = llDeleteSubList(my_source_keys, i, i);
@@ -302,6 +302,7 @@ remove_source(key objectKey, string objectName) {
 
 add_drain(key objectKey, string objectName) {
     //Respond to Connect-REQ
+    llPlaySound(kill_switch_1, 1);
     if (llListFindList(drain_keys, [objectKey]) > -1) {
         sayDebug(objectName+" was already connecred as a Drain. Reconnecting."); // warning
         llRegionSayTo(objectKey, POWER_CHANNEL, CONNECT+ACK+"["+(string)power_capacity+"]");
@@ -320,6 +321,7 @@ add_drain(key objectKey, string objectName) {
 
 remove_drain(key objectKey, string objectName) {
     // respond to Disconnect-REQ
+    llPlaySound(kill_switch_1, 1);
     integer i = llListFindList(drain_keys, [objectKey]);
     if (i > -1) {
         drain_keys = llDeleteSubList(drain_keys, i, i);
@@ -456,6 +458,7 @@ report_status() {
 
 switch_power(integer new_power_state) {
     sayDebug("switch_power "+(string)new_power_state);
+    llPlaySound(kill_switch_1, 1);
     power_state = new_power_state;
     integer i;
     if (power_state) {
@@ -561,6 +564,7 @@ default
                 sayDebug("listen Close");
             } else if (message == STATUS) {
                 report_status();
+                presentMainMenu(objectKey);
             } else if (message == RESET) {
                 sayDebug("listen Reset");
                 llResetScript();
