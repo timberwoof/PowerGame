@@ -38,13 +38,13 @@ integer power_capacity = 1200; // how much power we can transfer to drains
 
 
 // Solar Power Panel
+rotation previousSunRot = <0,0,0,0>;
+string trackmode = "SUN"; // or "CLOCK"
 integer photovoltaicFace=1;
 integer radiatorFace=3;
 vector sun;
 integer vertical=TRUE; // vertical ecliptic
 integer link_panel = 999;
-rotation myrot;
-vector myeuler;
 
 // *********************************
 // Debug
@@ -52,7 +52,7 @@ vector myeuler;
 integer debug_state = FALSE;
 sayDebug(string message) {
     if (debug_state) {
-        llSay(0,message);
+        llOwnerSay(message);
     }
 }
 
@@ -315,22 +315,58 @@ rotation Vec2Rot( vector FWD )
     return llAxes2Rot(FWD, LEFT, UP);
 }
 
-pointtosun()
+pointtosun(rotation therot)
 {
-    llSetLinkPrimitiveParams(link_panel, [PRIM_ROTATION, Vec2Rot( llGetSunDirection())]);
+    llSetLinkPrimitiveParams(link_panel, [PRIM_ROTATION, therot]);
     llSetLinkPrimitiveParams(link_panel, [PRIM_COLOR,photovoltaicFace,<1.0,1.0,1.0>,1.0]);
     llSetLinkPrimitiveParams(link_panel, [PRIM_GLOW,photovoltaicFace,0.2]);
     llSetLinkPrimitiveParams(link_panel, [PRIM_COLOR,radiatorFace,<0.7,0.7,0.7>,1.0]);
     llSetLinkPrimitiveParams(link_panel, [PRIM_GLOW,radiatorFace,0.0]);
 }
 
-radiate()
+radiate(rotation therot)
 {
-    llSetLinkPrimitiveParams(link_panel, [PRIM_ROTATION, llEuler2Rot(<270,0,90>*DEG_TO_RAD)]);
+    llSetLinkPrimitiveParams(link_panel, [PRIM_ROTATION, therot]);
     llSetLinkPrimitiveParams(link_panel, [PRIM_COLOR,photovoltaicFace,<0.5,0.5,0.5>,1.0]);
     llSetLinkPrimitiveParams(link_panel, [PRIM_GLOW,photovoltaicFace,0.0]);
     llSetLinkPrimitiveParams(link_panel, [PRIM_COLOR,radiatorFace,<0.25,0.0,0.0>,1.0]);
     llSetLinkPrimitiveParams(link_panel, [PRIM_GLOW,radiatorFace,0.2]);
+}
+
+track() {
+    sayDebug("Track");
+    rotation myrot = llGetRot();
+    vector myeuler = llRot2Euler(myrot);
+    sayDebug("myeuler:"+(string)myeuler);
+
+    vector sunVector = llGetRegionSunDirection();
+    rotation sunRot = llGetRegionSunRotation();
+    vector sunEuler = llRot2Euler(sunRot);
+    sayDebug("sunEuler:"+(string)sunEuler);
+
+    if (previousSunRot == <0,0,0,0>) {
+        sayDebug("first sun position measurement");
+        previousSunRot = llGetRegionSunRotation();
+    } else if (previousSunRot == sunRot) {
+        sayDebug("region sun is not moving; use clock");
+        float time = (llGetUnixTime() % 14400) / 14400.0; // (Days)
+        sayDebug("time:"+(string)time);
+        float hours_per_day = 4.0;
+        float angle = time  / hours_per_day * 2 * PI; // seconds to hours to raians 
+        sunEuler = <angle, 0, 0>;
+        sunRot = llEuler2Rot(sunEuler);
+        sayDebug("angle:"+(string)angle+"  sunEuler:"+(string)sunEuler+"  sunRot:"+(string)sunRot);
+    }
+    
+    pointtosun(sunRot);
+    //if (sunEuler.z > 0.10)
+    //{
+    //    pointtosun(sunRot);
+    //}
+    //else
+    //{
+    //    radiate(sunRot);
+    //}
 }
 
 
@@ -341,13 +377,12 @@ default
         sayDebug("state_entry");
         llListen(POWER_CHANNEL, "", NULL_KEY, "");
         
-        myrot = llGetRot();
-        myeuler = llRot2Euler(myrot);
-        llSay(0,"state_entry myeuler:"+(string)myeuler);
         link_panel = getLinkWithName("panel");
-        sun = llGetSunDirection();
-        radiate();
-
+        vector panel_scale = llList2Vector(llGetLinkPrimitiveParams(link_panel, [PRIM_SIZE]),0);
+        float area = panel_scale.x * panel_scale.z;
+        power_capacity = llFloor(area * 1000);
+        sayDebug("state_entry power_capacity:"+(string)power_capacity);
+        track();
         llSetTimerEvent(5);
     }
 
@@ -405,15 +440,6 @@ default
             resetMenu();
         }
     
-        sun = llGetSunDirection();
-        if (sun.z > 0.10)
-        {
-            pointtosun();
-        }
-        else
-        {
-            radiate();
-        }
-
+        track();
     }
 }
