@@ -58,7 +58,7 @@ string kill_switch_2 = "00800a8c-1ac2-ff0a-eed5-c1e37fef2317";
 integer debug_state = FALSE;
 sayDebug(string message) {
     if (debug_state) {
-        llSay(0,message);
+        llSay(0, message);
     }
 }
 
@@ -398,62 +398,65 @@ string power_state_to_string(integer power_state) {
     }
 }
 
-list_known_sources() {
-    llSay(0,"-----");
-    llSay(0,"Known Power Sources:");
+list_known_sources(key operator) {
+    string result;
+    result = result + "\n" +  "Known Power Sources:";
     integer i;
     if (num_known_sources > 0) {
         for (i = 0; i < num_known_sources; i = i + 1) {
-            llSay(0, llList2String(known_source_names, i) + ": " + (string)llList2Integer(known_source_power_capacities, i)+" watts");
+            result = result + "\n" +   llList2String(known_source_names, i) + ": " + (string)llList2Integer(known_source_power_capacities, i)+" watts";
         }
     } else {
-        llSay(0,"No Power Sources Known. Do Ping");
+        result = result + "\n" +  "No Power Sources Known. Do Ping";
     }
+    llInstantMessage(operator, result);
 }
 
-list_my_sources() {
-    llSay(0,"-----");
-    llSay(0,"Connected Power Sources:");
+list_my_sources(key operator) {
+    string result;
+    result = result + "\n" +  "Connected Power Sources:";
     integer i;
     if (num_my_sources > 0) {
         for (i = 0; i < num_my_sources; i = i + 1) {
             integer capacity = llList2Integer(my_source_power_capacities, i);
             integer supply = llList2Integer(my_source_power_supplies, i);
-            llSay(0, llList2String(my_source_names, i) + " supplying " +  (string)supply + " watts of " + (string)capacity);
+            result = result + "\n" +   llList2String(my_source_names, i) + " supplying " +  (string)supply + " watts of " + (string)capacity;
         }
     } else {
-        llSay(0,"No Power Sources Connected. Connect a power source.");
+        result = result + "\n" +  "No Power Sources Connected. Connect a power source.";
     }
-    llSay(0, "Supply: "+(string)my_source_power_rate+" watts of "+(string)my_source_power_capacity+" watts maximum");
+    result = result + "\n" +   "Supply: "+(string)my_source_power_rate+" watts of "+(string)my_source_power_capacity+" watts maximum";
+    llInstantMessage(operator, result);
 }
 
-list_drains() {
-    llSay(0,"-----");
-    llSay(0,"Power Drains:");
+list_drains(key operator) {
+    string result;
+    result = result + "\n" +  "Power Drains:";
     integer power_drain = 0;
     integer i;
     num_drains = llGetListLength(drain_keys);
     if (num_drains > 0) {
         for (i = 0; i < num_drains; i = i + 1) {
             power_drain = power_drain + llList2Integer(drain_powers, i);
-            llSay(0, llList2String(drain_names, i) + ": " + (string)llList2Integer(drain_powers, i)+" watts");
+            result = result + "\n" +   llList2String(drain_names, i) + ": " + (string)llList2Integer(drain_powers, i)+" watts";
         }
-        llSay(0, "Total Power Drain: "+(string)power_drain);
+        result = result + "\n" +   "Total Power Drain: "+(string)power_drain;
     } else {
-        llSay(0,"No Power Drains Connected.");
+        result = result + "\n" +  "No Power Drains Connected.";
     }
+    llInstantMessage(operator, result);
 }
 
-report_status() {
-    llSay(0,"*****");
-    llSay(0,"Device Report for "+llGetObjectName()+":");
-    llSay(0,"Maximum Power: "+ (string)power_capacity + " watts");
-    llSay(0,"Input Power: "+ (string)my_source_power_rate + " watts");
-    llSay(0,"Output Power: "+ (string)power_drain + " watts");
-    list_known_sources();
-    list_my_sources();
-    list_drains();
-    llSay(0,"*****");
+report_status(key operator) {
+    string result;
+    result = result + "\n" +  "Device Report for "+llGetObjectName()+":";
+    result = result + "\n" +  "Maximum Power: "+ (string)power_capacity + " watts";
+    result = result + "\n" +  "Input Power: "+ (string)my_source_power_rate + " watts";
+    result = result + "\n" +  "Output Power: "+ (string)power_drain + " watts";
+    llInstantMessage(operator, result);
+    list_known_sources(operator);
+    list_my_sources(operator);
+    list_drains(operator);
 }
 
 switch_power(integer new_power_state) {
@@ -563,8 +566,7 @@ default
             if (message == CLOSE) {
                 sayDebug("listen Close");
             } else if (message == STATUS) {
-                report_status();
-                presentMainMenu(objectKey);
+                report_status(objectKey);
             } else if (message == RESET) {
                 sayDebug("listen Reset");
                 llResetScript();
