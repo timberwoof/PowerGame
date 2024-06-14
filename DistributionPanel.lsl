@@ -38,7 +38,7 @@ list drain_powers; // how much power each device wants
 integer num_drains;
 integer power_drain;
 
-integer power_capacity = 1000; // how much power we can transfer total
+integer power_capacity = 10000000; // 10MW how much power we can transfer total
 
 integer dialog_channel;
 integer dialog_listen;
@@ -55,7 +55,7 @@ integer menuTimeout;
 string kill_switch_1 = "4690245e-a161-87ce-e392-47e2a410d981";
 string kill_switch_2 = "00800a8c-1ac2-ff0a-eed5-c1e37fef2317";
 
-integer debug_state = FALSE;
+integer debug_state = TRUE;
 sayDebug(string message) {
     if (debug_state) {
         llSay(0, message);
@@ -189,16 +189,33 @@ presentMainMenu(key whoClicked) {
 // ****************************************
 // Power Menus
 
+string EngFormat(integer quantity) {
+// present quantity in engineering notaiton with prefix
+    list divisors = [1, 1000, 1000000];
+    list prefixes = ["W", "kW", "MW"];
+    integer index = llFloor(llLog10(quantity) /3);
+    integer divisor = llList2Integer(divisors, index);
+    string prefix = llList2String(prefixes, index);
+    integer revisedQuantity = quantity / divisor;
+    return (string)revisedQuantity+prefix;
+}
+
+
 presentConnectSourceMenu(key whoClicked) {
     string message = "Select Power Distribution Panel to Connect To:";
     integer i;
     list buttons = [];
-    for (i = 0; i < num_known_sources; i = i + 1) {
-        message = message + "\n" + (string)i + " " + 
-            llList2String(known_source_names, i) + " (" + 
-            llList2String(known_source_power_capacities, i) + " watts)";
+    for (i = 0; i < num_known_sources & i <= 10; i = i + 1) {
+        string source_name = llList2String(known_source_names, i);
+        integer source_capacity = llList2Integer(known_source_power_capacities, i);
+        string item = (string)i + " " + 
+            source_name + " " +
+            EngFormat(source_capacity);
+        sayDebug(item);
+        message = message + "\n" + item;
         buttons = buttons + [(string)i];
     }
+    message = "aww";
     setUpMenu(CONNECT_SOURCE, whoClicked, message, buttons);    
 }
 
@@ -261,7 +278,7 @@ calculate_power_capacity() {
 
 add_source(key objectKey, string objectName, integer source_rate) {
     // respond to Connect-ACK
-    sayDebug("add_source:"+objectName+" "+(string)source_rate+" watts");
+    sayDebug("add_source:"+objectName+" "+EngFormat(source_rate));
     llPlaySound(kill_switch_1, 1);
 
     // Handle bad requests
@@ -305,7 +322,7 @@ add_drain(key objectKey, string objectName) {
     llPlaySound(kill_switch_1, 1);
     if (llListFindList(drain_keys, [objectKey]) > -1) {
         sayDebug(objectName+" was already connecred as a Drain. Reconnecting."); // warning
-        llRegionSayTo(objectKey, POWER_CHANNEL, CONNECT+ACK+"["+(string)power_capacity+"]");
+        llRegionSayTo(objectKey, POWER_CHANNEL, CONNECT+ACK+"["+EngFormat(power_capacity)+"]");
         return;
     }
     if (llListFindList(my_source_keys, [objectKey]) > -1) {
@@ -316,7 +333,7 @@ add_drain(key objectKey, string objectName) {
     drain_names = drain_names + [objectName];
     drain_powers = drain_powers + [0];
     num_drains = llGetListLength(drain_keys);
-    llRegionSayTo(objectKey, POWER_CHANNEL, CONNECT+ACK+"["+(string)power_capacity+"]");
+    llRegionSayTo(objectKey, POWER_CHANNEL, CONNECT+ACK+"["+EngFormat(power_capacity)+"]");
 }
 
 remove_drain(key objectKey, string objectName) {
@@ -337,7 +354,7 @@ remove_drain(key objectKey, string objectName) {
 
 handle_power_request(key objectKey, string objectName, integer powerLevel) {
     // Respond to Power-REQ
-    sayDebug(objectName+" requests "+(string)powerLevel+" watts");
+    sayDebug(objectName+" requests "+EngFormat(powerLevel));
     integer i;
     integer drain_num = -1;
     
@@ -370,7 +387,7 @@ handle_power_request(key objectKey, string objectName, integer powerLevel) {
 }
 
 handle_power_ack(key source_key, string source_name, integer source_power) {
-    sayDebug(source_name+" supplies "+(string)source_power+" watts");
+    sayDebug(source_name+" supplies "+EngFormat(source_power));
     integer object_num = llListFindList(my_source_keys, [source_key]);
     if (object_num < 0) {
         sayDebug(source_name+" was not in list of sources."); // error
@@ -404,7 +421,7 @@ list_known_sources(key operator) {
     integer i;
     if (num_known_sources > 0) {
         for (i = 0; i < num_known_sources; i = i + 1) {
-            result = result + "\n" +   llList2String(known_source_names, i) + ": " + (string)llList2Integer(known_source_power_capacities, i)+" watts";
+            result = result + "\n" +   llList2String(known_source_names, i) + ": " + EngFormat(llList2Integer(known_source_power_capacities, i));
         }
     } else {
         result = result + "\n" +  "No Power Sources Known. Do Ping";
@@ -420,12 +437,12 @@ list_my_sources(key operator) {
         for (i = 0; i < num_my_sources; i = i + 1) {
             integer capacity = llList2Integer(my_source_power_capacities, i);
             integer supply = llList2Integer(my_source_power_supplies, i);
-            result = result + "\n" +   llList2String(my_source_names, i) + " supplying " +  (string)supply + " watts of " + (string)capacity;
+            result = result + "\n" +   llList2String(my_source_names, i) + " supplying " +  EngFormat(supply)+" of " + EngFormat(capacity) + "max";
         }
     } else {
         result = result + "\n" +  "No Power Sources Connected. Connect a power source.";
     }
-    result = result + "\n" +   "Supply: "+(string)my_source_power_rate+" watts of "+(string)my_source_power_capacity+" watts maximum";
+    result = result + "\n" +   "Supply: "+EngFormat(my_source_power_rate)+" of "+EngFormat(my_source_power_capacity)+" maximum";
     llInstantMessage(operator, result);
 }
 
@@ -438,7 +455,7 @@ list_drains(key operator) {
     if (num_drains > 0) {
         for (i = 0; i < num_drains; i = i + 1) {
             power_drain = power_drain + llList2Integer(drain_powers, i);
-            result = result + "\n" +   llList2String(drain_names, i) + ": " + (string)llList2Integer(drain_powers, i)+" watts";
+            result = result + "\n" +   llList2String(drain_names, i) + ": " + EngFormat(llList2Integer(drain_powers, i));
         }
         result = result + "\n" +   "Total Power Drain: "+(string)power_drain;
     } else {
@@ -450,9 +467,9 @@ list_drains(key operator) {
 report_status(key operator) {
     string result;
     result = result + "\n" +  "Device Report for "+llGetObjectName()+":";
-    result = result + "\n" +  "Maximum Power: "+ (string)power_capacity + " watts";
-    result = result + "\n" +  "Input Power: "+ (string)my_source_power_rate + " watts";
-    result = result + "\n" +  "Output Power: "+ (string)power_drain + " watts";
+    result = result + "\n" +  "Maximum Power: "+ EngFormat(power_capacity);
+    result = result + "\n" +  "Input Power: "+ EngFormat(my_source_power_rate);
+    result = result + "\n" +  "Output Power: "+ EngFormat(power_drain);
     llInstantMessage(operator, result);
     list_known_sources(operator);
     list_my_sources(operator);
@@ -498,16 +515,16 @@ monitor_power() {
     power_drain = 0;
     for (i = 0; i < num_drains; i = i + 1) {
         power_drain = power_drain + llList2Integer(drain_powers, i);
-        sayDebug(llList2String(drain_names, i) + ": " + (string)llList2Integer(drain_powers, i)+" watts");
+        sayDebug(llList2String(drain_names, i) + ": " + EngFormat(llList2Integer(drain_powers, i)));
     }
 
     if (power_drain > my_source_power_rate) {
-        sayDebug("power_drain:"+(string)power_drain+" > my_source_power_rate:"+(string)my_source_power_rate);
+        sayDebug("power_drain:"+EngFormat(power_drain)+" > my_source_power_rate:"+EngFormat(my_source_power_rate));
         cut = TRUE;
     }
 
     if (power_drain > my_source_power_capacity) {
-        sayDebug("power_drain:"+(string)power_drain+" > my_source_power_capacity:"+(string)my_source_power_capacity);
+        sayDebug("power_drain:"+EngFormat(power_drain)+" > my_source_power_capacity:"+EngFormat(my_source_power_capacity));
         cut = TRUE;
     }
 
