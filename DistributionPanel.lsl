@@ -55,13 +55,12 @@ integer menuTimeout;
 string kill_switch_1 = "4690245e-a161-87ce-e392-47e2a410d981";
 string kill_switch_2 = "00800a8c-1ac2-ff0a-eed5-c1e37fef2317";
 
-integer debug_state = TRUE;
+integer debug_state = FALSE;
 sayDebug(string message) {
     if (debug_state) {
         llSay(0, message);
     }
 }
-
 
 // ****************************************
 // Menu and Message Utilities
@@ -204,19 +203,41 @@ string EngFormat(integer quantity) {
 presentConnectSourceMenu(key whoClicked) {
     string message = "Select Power Distribution Panel to Connect To:";
     integer i;
-    list buttons = [];
+    // list all the sources in distance order
+    vector myPos = llGetPos();
+    list sources;
     for (i = 0; i < num_known_sources & i <= 10; i = i + 1) {
         string source_name = llList2String(known_source_names, i);
         integer source_capacity = llList2Integer(known_source_power_capacities, i);
-        string item = (string)i + " " + 
-            source_name + " " +
-            EngFormat(source_capacity);
-        sayDebug(item);
-        message = message + "\n" + item;
-        buttons = buttons + [(string)i];
+        key source_key = llList2Key(known_source_keys, i);
+        list source_details = llGetObjectDetails(source_key, [OBJECT_POS]);    
+        vector source_position = llList2Vector(source_details, 0);
+        float source_distance = llVecDist(myPos, source_position);
+        sources = sources + [source_name, source_capacity, source_distance];
     }
-    message = "aww";
-    setUpMenu(CONNECT_SOURCE, whoClicked, message, buttons);    
+    
+    // sort by distance, nearest first
+    sources = llListSortStrided(sources, 3, 2, TRUE);
+    
+    // Set up the list in that order
+    list buttons = [];
+    string source_list = "Select from these sources:";
+    integer source_list_length = llStringLength(source_list);
+    for (i = 0; i < num_known_sources & i < 10; i = i + 1) {
+        string source_name = llList2String(sources, i*3);
+        integer source_capacity = llList2Integer(sources, i*3+1);
+        integer source_distance = llFloor(llList2Float(sources, i*3+2));
+        string item = (string)i + ": " + source_name + " (" + EngFormat(source_capacity) + ") " + (string)source_distance + "m";
+        sayDebug(item);
+        integer item_length = llStringLength(item);
+        if (source_list_length + item_length <= 512) {
+            source_list = source_list + "\n" + item;
+            integer source_list_length = llStringLength(source_list);
+            buttons = buttons + [(string)i];
+        }
+    }
+    llInstantMessage(whoClicked, source_list);
+    setUpMenu(CONNECT_SOURCE, whoClicked, source_list, buttons);    
 }
 
 presentDisonnectSourceMenu(key whoClicked) {
@@ -259,7 +280,6 @@ respond_ping_req(key objectKey) {
 add_known_source(string name, key objectKey, integer power) {
     // respond to Ping-ACK
     sayDebug ("add_known_source:"+name);
-    llPlaySound(kill_switch_1, 1);
     known_source_keys = known_source_keys + [objectKey];
     known_source_names = known_source_names + [name];
     known_source_power_capacities = known_source_power_capacities + [power]; 
