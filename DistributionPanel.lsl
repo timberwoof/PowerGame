@@ -2,6 +2,7 @@
 // Incremental build-up of Power Dustribution Panel 
 
 integer POWER_CHANNEL = -654647;
+integer MONITOR_CHANNEL = -6546478;
 integer clock_interval = 1;
 
 string REQ = "-REQ";
@@ -57,7 +58,7 @@ string kill_switch_2 = "00800a8c-1ac2-ff0a-eed5-c1e37fef2317";
 integer debug_state = FALSE;
 sayDebug(string message) {
     if (debug_state) {
-        llSay(0, message);
+        llSay(MONITOR_CHANNEL, message);
     }
 }
 
@@ -458,7 +459,7 @@ string list_my_sources() {
         for (i = 0; i < num_my_sources; i = i + 1) {
             integer capacity = llList2Integer(my_source_power_capacities, i);
             integer supply = llList2Integer(my_source_power_supplies, i);
-            result = result + "\n" +   llList2String(my_source_names, i) + " supplying " +  EngFormat(supply)+" of " + EngFormat(capacity) + "max";
+            result = result + "\n" +   llList2String(my_source_names, i) + " @ " +  EngFormat(supply)+" (max " + EngFormat(capacity) + ")";
         }
     } else {
         result = result + "\n" +  "No Power Sources Connected.";
@@ -583,7 +584,6 @@ default
     state_entry()
     {
         sayDebug("state_entry");
-        llSetTimerEvent(1);
         llListen(POWER_CHANNEL, "", NULL_KEY, "");
         send_ping_req();
         llSetTimerEvent(10);
