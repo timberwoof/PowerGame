@@ -482,12 +482,12 @@ string list_my_sources() {
         for (i = 0; i < num_my_sources; i = i + 1) {
             integer capacity = llList2Integer(my_source_power_capacities, i);
             integer supply = llList2Integer(my_source_power_supplies, i);
-            result = result + "\n" +   llList2String(my_source_names, i) + " @ " +  EngFormat(supply)+" (max " + EngFormat(capacity) + ")";
+            result = result + "\n" +   llList2String(my_source_names, i) + ": " +  EngFormat(supply)+"/" + EngFormat(capacity);
         }
     } else {
         result = result + "\n" +  "No Power Sources Connected.";
     }
-    result = result + "\n" +   "Supply: "+EngFormat(my_source_power_rate)+" of "+EngFormat(my_source_power_capacity)+" maximum";
+    result = result + "\n" +   "Total Supply: "+EngFormat(my_source_power_rate)+"/"+EngFormat(my_source_power_capacity);
     return result;
 }
 
@@ -510,15 +510,17 @@ string list_drains() {
 }
 
 report_status(key whoClicked) {
-    string message;
-    message = message + "\n" +  "Device Report for "+llGetObjectName()+":";
-    message = message + "\n" +  "Maximum Power: "+ EngFormat(power_capacity);
-    message = message + "\n" +  "Input Power: "+ EngFormat(my_source_power_rate);
-    message = message + "\n" +  "Output Power: "+ EngFormat(power_drain);
-    message = message + list_my_sources();
-    message = message + list_drains();
+    string status;
+    status = status + "\n" + "Device Report for "+llGetObjectName()+":";
+    status = status + "\n" + "Power: " + power_state_to_string(power_state);
+    status = status + "\n" + "Maximum Power: "+ EngFormat(power_capacity);
+    status = status + "\n" + "Input Power: "+ EngFormat(my_source_power_rate);
+    status = status + "\n" + "Output Power: "+ EngFormat(power_drain);
+    status = status + list_my_sources();
+    status = status + list_drains();
+    sayDebug(INFO, status);
     list buttons = [];
-    setUpMenu("", whoClicked, message, buttons);    
+    setUpMenu("", whoClicked, status, buttons);
 }
 
 switch_power(integer new_power_state) {
@@ -657,6 +659,8 @@ default
                 toggle_power();
             } else if (llListFindList(debug_levels, [trimMessageButton(message)]) > -1) { 
                 debug_level = llListFindList(debug_levels, [trimMessageButton(message)]);
+            } else if (message == "OK") {
+                // OK
             } else {
                 sayDebug(ERROR, "listen did not handle "+menuIdentifier+":"+message);
             }
