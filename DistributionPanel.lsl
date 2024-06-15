@@ -204,10 +204,17 @@ presentMainMenu(key whoClicked) {
 
 presentDebugLevelMenu(key whoClicked) {
     string message = "Set the Debug Level:";
-    setUpMenu(DEBUG_LEVELS, whoClicked, message, debug_levels);
+    string debug_level_text = llList2String(debug_levels, debug_level);
+    list buttons = [];
+    integer i;
+    for (i = 0; i < llGetListLength(debug_levels); i = i + 1) {
+        buttons = buttons + menuRadioButton(llList2String(debug_levels, i), debug_level_text);
+    }
+    setUpMenu(DEBUG_LEVELS, whoClicked, message, buttons);
 }
 
 setDebugLevel(string debug_level_name) {
+    llSay(0,"setDebugLevel("+debug_level_name+")");
     debug_level = llListFindList(debug_levels, [debug_level_name]);
 }
 
@@ -643,7 +650,7 @@ default
             } else if (message == DISCONNECT_DRAIN) {
                 presentDisonnectDrainMenu(objectKey);
             } else if (menuIdentifier == DEBUG_LEVELS) {
-                setDebugLevel(message);
+                setDebugLevel(trimMessageButton(message));
             } else if (menuIdentifier == CONNECT_SOURCE) {
                 sayDebug(TRACE, "listen CONNECT from "+name+": "+message);
                 llRegionSayTo(known_source_key((integer)message), POWER_CHANNEL, CONNECT+REQ);
