@@ -3,7 +3,7 @@
 
 integer POWER_CHANNEL = -654647;
 integer clock_interval = 1;
-integer power_ask = 500;
+integer power_ask = 100;
 integer power_draw = 0;
 
 string REQ = "-REQ";
@@ -22,10 +22,9 @@ string DEBUG = "Debug";
 integer ON = TRUE;
 integer OFF = FALSE;
 
-list known_source_keys;
-list known_source_names;
-list known_source_powers;
-integer num_known_sources;
+list known_sources; // [key, name, power, distance]
+integer num_known_sources = 0;
+integer known_sources_are_sorted = FALSE;
 
 key my_source_key;
 string my_source_name;
@@ -50,6 +49,32 @@ sayDebug(string message) {
     if (debug_state) {
         llSay(0,message);
     }
+}
+
+string EngFormat(integer quantity) {
+// present quantity in engineering notaiton with prefix
+    list divisors = [1, 1000, 1000000];
+    list prefixes = ["W", "kW", "MW"];
+    integer index = llFloor(llLog10(quantity) /3);
+    integer divisor = llList2Integer(divisors, index);
+    string prefix = llList2String(prefixes, index);
+    integer revisedQuantity = quantity / divisor;
+    return (string)revisedQuantity+prefix;
+}
+
+// Known Sources
+// [key, name, power, distance]
+key known_source_key(integer i) {
+    return llList2Key(known_sources, i*4);
+}
+string known_source_name(integer i) {
+    return llList2Key(known_sources, i*4+1);
+}
+integer known_source_power(integer i) {
+    return llList2Integer(known_sources, i*4+2);
+}
+integer known_source_distance(integer i) {
+    return llList2Integer(known_sources, i*4+3);
 }
 
 string menuCheckbox(string title, integer onOff)
@@ -124,13 +149,7 @@ setUpMenu(string identifier, key avatarKey, string message, list buttons)
 // message - text for top of blue menu dialog
 // buttons - list of button texts
 {
-    sayDebug("setUpMenu "+identifier);
-    
-    if (identifier != mainMenu) {
-        buttons = buttons + [mainMenu];
-    }
-    buttons = buttons + [CLOSE];
-    
+    sayDebug("setUpMenu "+identifier);    
     menuIdentifier = identifier;
     menuAgentKey = avatarKey; // remember who clicked
     menuChannel = -(llFloor(llFrand(10000)+1000));
@@ -177,32 +196,47 @@ integer getMessageParameter(string message) {
 
 send_ping_req() {
     sayDebug ("ping_req");
-    known_source_keys = [];
-    known_source_names = [];
+    num_known_sources = 0;
+    known_sources = [];
+    known_sources_are_sorted = FALSE;
     llShout(POWER_CHANNEL, PING+REQ);
 }
 
-add_known_source(string name, key objectKey, integer power) {
+add_known_source(string source_name, key source_key, integer source_power) {
     // respond to Ping-ACK
-    sayDebug ("add_known_source:"+name);
-    known_source_keys = known_source_keys + [objectKey];
-    known_source_names = known_source_names + [name];
-    known_source_powers = known_source_powers + [power]; 
-    num_known_sources = llGetListLength(known_source_keys);
+    sayDebug ("add_known_source("+source_name+") "+EngFormat(source_power));
+    vector myPos = llGetPos();
+    list source_details = llGetObjectDetails(source_key, [OBJECT_POS]);    
+    vector source_position = llList2Vector(source_details, 0);
+    integer source_distance = llFloor(llVecDist(myPos, source_position));
+    // [key, name, power, distance]
+    known_sources = known_sources + [source_key, source_name, source_power, source_distance]; 
+    num_known_sources = num_known_sources + 1;
 }
 
 presentConnectSourceMenu(key whoClicked) {
-    string message = "Select Power Distribution Panel to Connect To:";
-    integer i;
+    // sort by distance, nearest first
+    if (!known_sources_are_sorted) {
+        known_sources = llListSortStrided(known_sources, 4, 3, TRUE);
+        known_sources_are_sorted = TRUE;
+    }
+    
+    // Set up the list in that order
     list buttons = [];
-    for (i = 0; i < llGetListLength(known_source_names); i = i + 1) {
-        message = message + "\n" + (string)i + " " + 
-            llList2String(known_source_names, i) + " (" + 
-            llList2String(known_source_powers, i) + " watts)";
-        buttons = buttons + [(string)i];
+    string message = "Select Power Source:";
+    integer i;
+    for (i = 0; i < num_known_sources & i < 12; i = i + 1) {
+        /// [key, name, power, distance]
+        string item = "\n" + (string)i + ": " + known_source_name(i) + " (" + EngFormat(known_source_power(i)) + ") " + (string)known_source_distance(i) + "m";
+        sayDebug(item);
+        if ((llStringLength(message) + llStringLength(item)) < 512) {
+            message = message + item;
+            buttons = buttons + [(string)i];
+        }
     }
     setUpMenu(CONNECT_SOURCE, whoClicked, message, buttons);    
 }
+
 
 string power_state_to_string(integer power_state) {
     if (power_state) {
@@ -274,7 +308,7 @@ default
                 llRegionSayTo(my_source_key, POWER_CHANNEL, DISCONNECT+REQ);
             } else if (menuIdentifier == CONNECT_SOURCE) {
                 sayDebug("listen CONNECT from "+name+": "+message);
-                llRegionSayTo(llList2Key(known_source_keys, (integer)message), POWER_CHANNEL, CONNECT+REQ);
+                llRegionSayTo(known_source_key((integer)message), POWER_CHANNEL, CONNECT+REQ);
             } else if (trimMessageButton(message) == POWER) {
                 toggle_power();
             } else if (trimMessageButton(message) == DEBUG) {
