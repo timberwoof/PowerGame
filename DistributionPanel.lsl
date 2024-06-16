@@ -30,10 +30,9 @@ integer connected_source_power_capacity = 0; // all source capacities added up
 integer connected_source_power_rate = 0; // how much power we are getting from sources
 integer power_state;
 
-list drain_keys;
-list drain_names;
-list drain_powers; // how much power each device wants
+list connected_drains; // [key, name, demand, supply]
 integer num_drains;
+integer power_demand;
 integer power_drain;
 
 integer dialog_channel;
@@ -244,17 +243,33 @@ integer known_source_distance(integer i) {
 // My Sources
 // [key, name, capacity, supply]
 key connected_source_key(integer i) {
-    return llList2Key(known_sources, i*4);
+    return llList2Key(connected_sources, i*4);
 }
 string connected_source_name(integer i) {
-    return llList2Key(known_sources, i*4+1);
+    return llList2Key(connected_sources, i*4+1);
 }
 integer connected_source_power(integer i) {
-    return llList2Integer(known_sources, i*4+2);
+    return llList2Integer(connected_sources, i*4+2);
 }
 integer connected_source_supply(integer i) {
-    return llList2Integer(known_sources, i*4+3);
+    return llList2Integer(connected_sources, i*4+3);
 }
+
+// conected drains
+// [key, name, demand, supply]
+key connected_drain_key(integer i) {
+    return llList2Key(connected_drains, i*4);
+}
+string connected_drain_name(integer i) {
+    return llList2Key(connected_drains, i*4+1);
+}
+integer connected_drain_demand(integer i) {
+    return llList2Integer(connected_drains, i*4+2);
+}
+integer connected_drain_supply(integer i) {
+    return llList2Integer(connected_drains, i*4+3);
+}
+
 
 presentConnectSourceMenu(key whoClicked) {
     // sort by distance, nearest first
@@ -292,10 +307,11 @@ presentDisonnectSourceMenu(key whoClicked) {
 
 presentDisonnectDrainMenu(key whoClicked) {
     string message = "Select Power Drain to Disconnect:";
+     // [key, name, demand, supply]
     integer i;
     list buttons = [];
     for (i = 0; i < num_drains; i = i + 1) {
-        message = message + "\n" + (string)i + " " + llList2String(drain_names, i) + " " + llList2String(drain_powers, i) + "W";
+        message = message + "\n" + (string)i + " " + connected_drain_name(i) + " " + EngFormat(connected_drain_demand(i));
         buttons = buttons + [(string)i];
     }
     setUpMenu(DISCONNECT_DRAIN, whoClicked, message, buttons);    
@@ -330,13 +346,27 @@ add_known_source(string source_name, key source_key, integer source_power) {
 }
 
 calculate_power_capacity() {
+    // Calculate the total we could receive from all the sources
+    // [key, name, capacity, supply]
+    num_connected_sources = llGetListLength(connected_sources) / 4;
+    connected_source_power_rate = 0;
+    integer i;
+    for (i = 0; i < num_connected_sources; i = i + 1) {
+        connected_source_power_rate = connected_source_power_rate + connected_source_power(i);
+    }
+    sayDebug(DEBUG, "calculate_power_capacity:"+EngFormat(connected_source_power_rate));
+}
+
+calculate_power_supply() {
+    //  Clauclate the total power we are receiving from the sources
+    // [key, name, capacity, supply]
     num_connected_sources = llGetListLength(connected_sources) / 4;
     connected_source_power_capacity = 0;
     integer i;
     for (i = 0; i < num_connected_sources; i = i + 1) {
-        connected_source_power_capacity = connected_source_power_capacity + connected_source_power(i);
+        connected_source_power_capacity = connected_source_power_capacity + connected_source_supply(i);
     }
-    sayDebug(DEBUG, "calculate_power_capacity:"+EngFormat(connected_source_power_capacity));
+    sayDebug(DEBUG, "calculate_power_supply:"+EngFormat(connected_source_power_capacity));
 }
 
 connect_source(key objectKey, string objectName, integer source_rate) {
@@ -354,17 +384,16 @@ connect_source(key objectKey, string objectName, integer source_rate) {
         sayDebug(WARN, objectName+" was already connected as a Source.");
         return;
     }
-    if (llListFindList(drain_keys, [objectKey]) >= 0) {
+    if (llListFindList(connected_drains, [objectKey]) >= 0) {
         sayDebug(WARN, objectName+" was already connected as a Drain.");
         return;
     }
     
     // register the source
     // [key, name, capacity, supply]
-    sayDebug(DEBUG, list_connected_sources());
     connected_sources = connected_sources + [objectKey, objectName, source_rate, 0];
-    sayDebug(DEBUG, list_connected_sources());
     calculate_power_capacity();
+    sayDebug(DEBUG, list_connected_sources());
 }
 
 disconnect_source(key objectKey, string objectName) {
@@ -378,12 +407,13 @@ disconnect_source(key objectKey, string objectName) {
         sayDebug(WARN, "disconnect_source("+objectName+"): was not connected.");
     }
     calculate_power_capacity();
+    sayDebug(DEBUG, list_connected_sources());
 }
 
 connect_drain(key objectKey, string objectName) {
     //Respond to Connect-REQ
     llPlaySound(kill_switch_1, 1);
-    if (llListFindList(drain_keys, [objectKey]) > -1) {
+    if (llListFindList(connected_drains, [objectKey]) > -1) {
         sayDebug(WARN, objectName+" was already connecred as a Drain. Reconnecting.");
         llRegionSayTo(objectKey, POWER_CHANNEL, CONNECT+ACK+"["+EngFormat(MAX_POWER_CAPACITY)+"]");
         return;
@@ -392,28 +422,38 @@ connect_drain(key objectKey, string objectName) {
         sayDebug(WARN, objectName+" was already connecred as a Source.");
         return;
     }
-    drain_keys = drain_keys + [objectKey];
-    drain_names = drain_names + [objectName];
-    drain_powers = drain_powers + [0];
-    num_drains = llGetListLength(drain_keys);
+    // [key, name, demand, supply]
+    connected_drains = connected_drains + [objectKey, objectName, 0, 0];
+    num_drains = num_drains +1;
     llRegionSayTo(objectKey, POWER_CHANNEL, CONNECT+ACK+"["+EngFormat(MAX_POWER_CAPACITY)+"]");
 }
 
 disconnect_drain(key objectKey, string objectName) {
     // respond to Disconnect-REQ
     llPlaySound(kill_switch_1, 1);
-    integer i = llListFindList(drain_keys, [objectKey]);
+    // [key, name, demand, supply]
+    integer i = llListFindList(connected_drains, [objectKey]);
     if (i > -1) {
-        drain_keys = llDeleteSubList(drain_keys, i, i);
-        drain_names = llDeleteSubList(drain_names, i, i);
-        drain_powers = llDeleteSubList(drain_powers, i, i);        
+        connected_drains = llDeleteSubList(connected_drains, i, 3);
         sayDebug(INFO, "Drain "+objectName+" was disconnected."); // waning
     } else {
         sayDebug(INFO, "Drain "+objectName+" was not connected."); // waning
     }
-    num_drains = llGetListLength(drain_keys);
+    num_drains = llGetListLength(connected_drains);
     llRegionSayTo(objectKey, POWER_CHANNEL, DISCONNECT+ACK);
 }
+
+calculate_power_drain() {
+     // [key, name, demand, supply]
+    num_connected_sources = llGetListLength(connected_sources) / 4;
+    connected_source_power_capacity = 0;
+    integer i;
+    for (i = 0; i < num_connected_sources; i = i + 1) {
+        connected_source_power_capacity = connected_source_power_capacity + connected_source_supply(i);
+    }
+    sayDebug(DEBUG, "calculate_power_supply:"+EngFormat(connected_source_power_capacity));
+}
+
 
 handle_power_request(key objectKey, string objectName, integer powerLevel) {
     // Respond to Power-REQ
@@ -422,20 +462,19 @@ handle_power_request(key objectKey, string objectName, integer powerLevel) {
     integer drain_num = -1;
     
     // find the drain's index in the list
-    drain_num = llListFindList(drain_keys, [objectKey]);
+     // [key, name, demand, supply]
+    drain_num = llListFindList(connected_drains, [objectKey]) / 4;
     
-    // update the drain's power draw
+    // update the drain's power demand
     if (drain_num > -1) {
-        drain_powers = llListReplaceList(drain_powers, [powerLevel], drain_num, drain_num);
+        connected_drains = llListReplaceList(connected_drains, [powerLevel], drain_num*4+2, drain_num*4+2);
         
-        // reclaculate total power drain
-        power_drain = 0;
+        // reclaculate total power demand
+        power_demand = 0;
         integer i;
-        num_drains = llGetListLength(drain_keys);
         for (i = 0; i < num_drains; i = i + 1) {
-            power_drain = power_drain + llList2Integer(drain_powers, i);
+            power_demand = power_demand + connected_drain_demand(i);
         }
-        
         request_power();
     } else {
         sayDebug(DEBUG, "object was not connected");
@@ -465,6 +504,11 @@ handle_power_ack(key source_key, string source_name, integer source_power) {
     for (i = 0; i < num_connected_sources; i = i + 1) {
         connected_source_power_rate = connected_source_power_rate + connected_source_supply(i);
     }
+}
+
+alocate_power_to_drains() {
+// distribute the total supplied power over all the drains pro-rated by demand
+
 }
 
 // ****************************************
@@ -513,11 +557,10 @@ string list_drains() {
     result = result + "\n-----\nPower Drains:";
     integer power_drain = 0;
     integer i;
-    num_drains = llGetListLength(drain_keys);
     if (num_drains > 0) {
         for (i = 0; i < num_drains; i = i + 1) {
-            power_drain = power_drain + llList2Integer(drain_powers, i);
-            result = result + "\n" +   llList2String(drain_names, i) + ": " + EngFormat(llList2Integer(drain_powers, i));
+            power_drain = power_drain + connected_drain_demand(i);
+            result = result + "\n" +  connected_drain_name(i) + ": " + EngFormat(connected_drain_supply(i))+ ": " + EngFormat(connected_drain_demand(i));
         }
         result = result + "\n" +   "Total Power Drain: "+(string)power_drain;
     } else {
@@ -551,14 +594,14 @@ switch_power(integer new_power_state) {
         request_power();
         // grant power to drains
         for (i = 0; i < num_drains; i = i + 1) {
-            key drain_key = llList2Key(drain_keys, i);
-            integer rate = llList2Integer(drain_powers, i);
+            key drain_key = connected_drain_key(i);
+            integer rate = connected_drain_demand(i);
             llRegionSayTo(drain_key, POWER_CHANNEL, POWER+ACK+"["+(string)rate+"]");
         }
     } else {
         // cut power to all the drains
         for (i = 0; i < num_drains; i = i + 1) {
-            key drain_key = llList2Key(drain_keys, i);
+            key drain_key = connected_drain_key(i);
             llRegionSayTo(drain_key, POWER_CHANNEL, POWER+ACK+"[0]");
         }
         // cut power from all the sources
@@ -578,8 +621,8 @@ monitor_power() {
     integer i;
     power_drain = 0;
     for (i = 0; i < num_drains; i = i + 1) {
-        power_drain = power_drain + llList2Integer(drain_powers, i);
-        sayDebug(TRACE, llList2String(drain_names, i) + ": " + EngFormat(llList2Integer(drain_powers, i)));
+        power_drain = power_drain + connected_drain_supply(i);
+        sayDebug(TRACE, connected_drain_name(i) + ": " + EngFormat(connected_drain_supply(i)));
     }
 
     if (power_drain > connected_source_power_rate) {
@@ -668,7 +711,7 @@ default
                 llRegionSayTo(connected_source_key((integer)message), POWER_CHANNEL, DISCONNECT+REQ);
             } else if (menuIdentifier == DISCONNECT_DRAIN) {
                 sayDebug(DEBUG, "listen DISCONNECT from "+name+": "+message);
-                key drain_key = llList2Key(drain_keys, (integer)message);
+                key drain_key = connected_drain_key((integer)message);
                 llRegionSayTo(drain_key, POWER_CHANNEL, DISCONNECT+ACK);
                 disconnect_drain(drain_key, name);
             } else if (trimMessageButton(message) == POWER) {
