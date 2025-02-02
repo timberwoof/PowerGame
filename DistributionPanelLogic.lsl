@@ -76,46 +76,56 @@ setDebugLevelByNumber(integer new_debug_level) {
 
 // ********************************
 // Known Power Sources
-list known_sources; // [key, name, power, distance]
+list known_source_keys;
+list known_source_names;
+list known_source_powers;
+list known_source_distances;
 integer num_known_sources = 0;
-integer STRIDE = 4;
 
 read_known_sources() {
     //sayDebug(DEBUG,"read_known_sources");
-    known_sources = llJson2List(llLinksetDataRead("known_sources"));
-    num_known_sources = llGetListLength(known_sources) / STRIDE;
+    known_source_keys = llJson2List(llLinksetDataRead("known_source_keys"));
+    known_source_names = llJson2List(llLinksetDataRead("known_source_names"));
+    known_source_powers = llJson2List(llLinksetDataRead("known_source_powers"));
+    known_source_distances = llJson2List(llLinksetDataRead("known_source_distances"));
+    num_known_sources = llGetListLength(known_source_keys);
 }
 
 write_known_sources() {
-    num_known_sources = llGetListLength(known_sources) / STRIDE;
+    num_known_sources = llGetListLength(known_source_keys);
     llLinksetDataWrite("num_known_sources", (string)num_known_sources);
-    string json =  llList2Json(JSON_ARRAY, known_sources);
-    llLinksetDataWrite("known_sources",json);
+    llLinksetDataWrite("known_source_keys", llList2Json(JSON_ARRAY, known_source_keys));
+    llLinksetDataWrite("known_source_names", llList2Json(JSON_ARRAY, known_source_names));
+    llLinksetDataWrite("known_source_powers", llList2Json(JSON_ARRAY, known_source_powers));
+    llLinksetDataWrite("known_source_distances",llList2Json(JSON_ARRAY, known_source_distances));
 }
 
 initialize_known_sources() {
-    known_sources = [];
+    known_source_keys = [];
+    known_source_names = [];
+    known_source_powers = [];
+    known_source_distances = [];
     write_known_sources();
 }
 
 integer known_source_key_index(string objectKey) {
-    if (llGetListLength(known_sources) == 0) {
+    if (num_known_sources == 0) {
         return -1;
     }
-    integer result = llListFindStrided(known_sources, [objectKey], 0, -1, STRIDE);
+    integer result = llListFindList(known_source_keys, [objectKey]);
     return result;
 }
 string known_source_key(integer source_num) {
-    return llList2Key(known_sources, source_num*STRIDE);
+    return llList2Key(known_source_keys, source_num);
 }
 string known_source_name(integer source_num) {
-    return llList2String(known_sources, source_num*STRIDE+1);
+    return llList2String(known_source_names, source_num);
 }
 integer known_source_power(integer source_num) {
-    return llList2Integer(known_sources, source_num*STRIDE+2);
+    return llList2Integer(known_source_powers, source_num);
 }
 integer known_source_distance(integer source_num) {
-    return llList2Integer(known_sources, source_num*STRIDE+3);
+    return llList2Integer(known_source_distances, source_num);
 }
 
 send_source_ping_req() {
@@ -159,7 +169,10 @@ add_known_source(string source_key, string source_name, integer source_power, fl
         return;
     }
 
-    known_sources = known_sources + [source_key, source_name, source_power, source_distance]; 
+    known_source_keys = known_source_keys + [source_key]; 
+    known_source_names = known_source_names + [source_name]; 
+    known_source_powers = known_source_powers + [source_power]; 
+    known_source_distances = known_source_distances + [source_distance]; 
     write_known_sources();
 }
 
@@ -183,11 +196,67 @@ string list_known_sources() {
 
 // **********************
 // Conected Power Sources
-list connected_sources; // [key, name, capacity, rate]
+list connected_source_keys; 
+list connected_source_names; 
+list connected_source_capacitys; 
+list connected_source_rates; 
 integer num_connected_sources = 0;
 
 integer connected_source_power_capacity = 0;
 integer connected_source_power_rate = 0;
+
+read_connected_sources() {
+    //sayDebug(DEBUG,"read_connected_sources");
+    connected_source_keys = llJson2List(llLinksetDataRead("connected_source_keys"));
+    connected_source_names = llJson2List(llLinksetDataRead("connected_source_names"));
+    connected_source_capacitys = llJson2List(llLinksetDataRead("connected_source_capacitys"));
+    connected_source_rates = llJson2List(llLinksetDataRead("connected_source_rates"));
+    num_connected_sources = llGetListLength(connected_source_keys);
+    calculate_source_power_capacity();
+}
+
+write_connected_sources() {
+    //sayDebug(DEBUG,"write_connected_sources");
+    num_connected_sources = llGetListLength(connected_source_keys);
+    llLinksetDataWrite("num_connected_sources", (string)num_connected_sources);
+    llLinksetDataWrite("connected_source_keys", llList2Json(JSON_ARRAY, connected_source_keys));
+    llLinksetDataWrite("connected_source_names", llList2Json(JSON_ARRAY, connected_source_names));
+    llLinksetDataWrite("connected_source_capacitys", llList2Json(JSON_ARRAY, connected_source_capacitys));
+    llLinksetDataWrite("connected_source_rates", llList2Json(JSON_ARRAY, connected_source_rates));
+}
+
+initialize_connected_sources() {
+    //sayDebug(DEBUG,"initialize_connected_sources");
+    connected_source_keys = [];
+    connected_source_names = [];
+    connected_source_capacitys = [];
+    connected_source_rates = [];
+    write_connected_sources();
+    calculate_source_power_capacity();
+}
+
+integer connected_source_key_index(string objectKey) {
+    integer result;
+    if (num_connected_sources == 0) {
+        result = -1;
+    } else {
+        result = llListFindList(connected_source_keys, [objectKey]);
+    }
+    return result;
+}
+
+string connected_source_key(integer source_num) {
+    return llList2Key(connected_source_keys, source_num);
+}
+string connected_source_name(integer source_num) {
+    return llList2String(connected_source_names, source_num);
+}
+integer connected_source_capacity(integer source_num) {
+    return llList2Integer(connected_source_capacitys, source_num);
+}
+integer connected_source_rate(integer source_num) {
+    return llList2Integer(connected_source_rates, source_num);
+}
 
 calculate_source_power_capacity() {
     // Calculate the total we could receive from all the connected sources
@@ -215,51 +284,6 @@ calculate_source_power_rate() {
     //sayDebug(DEBUG, "calculate_source_power_rate:"+EngFormat(connected_source_power_rate));
 }
 
-read_connected_sources() {
-    //sayDebug(DEBUG,"read_connected_sources");
-    connected_sources = llJson2List(llLinksetDataRead("connected_sources"));
-    num_connected_sources = llGetListLength(connected_sources) / STRIDE;
-    calculate_source_power_capacity();
-}
-
-write_connected_sources() {
-    //sayDebug(DEBUG,"write_connected_sources");
-    num_connected_sources = llGetListLength(connected_sources) / STRIDE;
-    llLinksetDataWrite("num_connected_sources", (string)num_connected_sources);
-    string json = llList2Json(JSON_ARRAY, connected_sources);
-    llLinksetDataWrite("connected_sources", json);
-}
-
-initialize_connected_sources() {
-    //sayDebug(DEBUG,"initialize_connected_sources");
-    connected_sources = [];
-    write_connected_sources();
-    calculate_source_power_capacity();
-}
-
-integer connected_source_key_index(string objectKey) {
-    integer result;
-    if (llGetListLength(connected_sources) == 0) {
-        result = -1;
-    } else {
-        result = llListFindStrided(connected_sources, [objectKey], 0, -1, STRIDE);
-    }
-    return result;
-}
-
-string connected_source_key(integer source_num) {
-    return llList2Key(connected_sources, source_num*STRIDE);
-}
-string connected_source_name(integer source_num) {
-    return llList2String(connected_sources, source_num*STRIDE+1);
-}
-integer connected_source_capacity(integer source_num) {
-    return llList2Integer(connected_sources, source_num*STRIDE+2);
-}
-integer connected_source_rate(integer source_num) {
-    return llList2Integer(connected_sources, source_num*STRIDE+3);
-}
-
 handle_source_connect_ack(string objectKey, string objectName, integer source_capacity) {
     // a source said yes to power request.
     // Add it to our list of sources and recalculate power capacity
@@ -274,19 +298,22 @@ handle_source_connect_ack(string objectKey, string objectName, integer source_ca
         sayDebug(WARN, objectName+" was already connected as a Source.");
         return;
     }
-    if (llListFindList(connected_drains, [objectKey]) >= 0) {
+    if (llListFindList(connected_drain_keys, [objectKey]) >= 0) {
         sayDebug(WARN, objectName+" was already connected as a Drain.");
         return;
     }
     
     // delete from known sources *** Enable this if we need to save space
     //integer index = known_source_key_index(objectKey);
-    //known_sources = llDeleteSubList(known_sources, index*STRIDE, index*STRIDE+3);
+    //known_sources = llDeleteSubList(known_sources, index, index);
     //write_known_sources();
     
     // register the source
     llPlaySound(kill_switch_1, 1);
-    connected_sources = connected_sources + [objectKey, objectName, source_capacity, 0];
+    connected_source_keys = connected_source_keys + [objectKey];
+    connected_source_names = connected_source_names + [objectName];
+    connected_source_capacitys = connected_source_capacitys + [source_capacity];
+    connected_source_rates = connected_source_rates + [0];
     write_connected_sources();
     calculate_source_power_capacity();
     request_power_from_sources();
@@ -303,7 +330,10 @@ handle_source_disconnect_ack(string objectKey, string objectName) {
         llPlaySound(kill_switch_1, 1);
         //sayDebug(DEBUG,"handle_source_disconnect_ack \""+connected_source_name(source_num)+"\"");
         //sayDebug(DEBUG,"handle_source_disconnect_ack1"+list_connected_sources());
-        connected_sources = llDeleteSubList(connected_sources, source_num*STRIDE, source_num*STRIDE+3);
+        connected_source_keys = llDeleteSubList(connected_source_keys, source_num, source_num);
+        connected_source_names = llDeleteSubList(connected_source_names, source_num, source_num);
+        connected_source_capacitys = llDeleteSubList(connected_source_capacitys, source_num, source_num);
+        connected_source_rates = llDeleteSubList(connected_source_rates, source_num, source_num);
         //sayDebug(DEBUG,"handle_source_disconnect_ack2"+list_connected_sources());
         write_connected_sources();
         calculate_source_power_capacity();
@@ -326,7 +356,7 @@ handle_source_power_ack(string source_key, string source_name, integer source_po
     }
     //sayDebug(DEBUG,list_connected_sources());
     // Update that source's supplied rate
-    connected_sources = llListReplaceList(connected_sources, [source_power], source_num*STRIDE+3, source_num*STRIDE+3);
+    connected_source_rates = llListReplaceList(connected_source_rates, [source_power], source_num, source_num);
     write_connected_sources();
     integer previous_power_rate = connected_source_power_rate;
     calculate_source_power_rate();
@@ -423,27 +453,37 @@ string list_connected_sources() {
 
 // *************************
 // conected drains
-list connected_drains = []; // [key, name, demand, rate]
+list connected_drain_keys = []; 
+list connected_drain_names = []; 
+list connected_drain_demands = []; 
+list connected_drain_rates = []; 
 integer num_connected_drains = 0;
 integer connected_drain_power_rate;
 integer connected_drain_power_demand;
 
 read_connected_drains() {
-    connected_drains = llJson2List(llLinksetDataRead("connected_drains"));
-    num_connected_drains = llGetListLength(connected_drains) / STRIDE;
+    connected_drain_keys = llJson2List(llLinksetDataRead("connected_drain_keys"));
+    connected_drain_names = llJson2List(llLinksetDataRead("connected_drain_names"));
+    connected_drain_demands = llJson2List(llLinksetDataRead("connected_drain_demands"));
+    connected_drain_rates = llJson2List(llLinksetDataRead("connected_drain_rates"));
+    num_connected_drains = llGetListLength(connected_drain_keys);
     flush_drains(FALSE);
 }
 
 write_connected_drains() {
-    num_connected_drains = llGetListLength(connected_drains) / STRIDE; 
-    //sayDebug(DEBUG,"write_connected_drains num_connected_drains:"+(string)num_connected_drains);
+    num_connected_drains = llGetListLength(connected_drain_keys); 
     llLinksetDataWrite("num_connected_drains", (string)num_connected_drains);
-    string json = llList2Json(JSON_ARRAY, connected_drains);
-    llLinksetDataWrite("connected_drains", json);
+    llLinksetDataWrite("connected_drain_keys", llList2Json(JSON_ARRAY, connected_drain_keys));
+    llLinksetDataWrite("connected_drain_names", llList2Json(JSON_ARRAY, connected_drain_names));
+    llLinksetDataWrite("connected_drain_demands", llList2Json(JSON_ARRAY, connected_drain_demands));
+    llLinksetDataWrite("connected_drain_rates", llList2Json(JSON_ARRAY, connected_drain_rates));
 }
 
 initialize_connected_drains() {
-    connected_drains = [];
+    connected_drain_keys = [];
+    connected_drain_names = [];
+    connected_drain_demands = [];
+    connected_drain_rates = [];
     flush_drains(TRUE);
 }
 
@@ -458,31 +498,34 @@ flush_drains(integer write) {
 
 integer drain_key_index(string objectKey) {
     integer result;
-    if (llGetListLength(connected_drains) == 0) {
+    if (num_connected_drains == 0) {
         //sayDebug(DEBUG, "drain_key_index list length was 0");
         result = -1;
     } else {
-        result = llListFindStrided(connected_drains, [objectKey], 0, -1, STRIDE);
+        result = llListFindList(connected_drain_keys, [objectKey]);
     }
     //sayDebug(DEBUG, "drain_key_index("+objectKey+") returns "+(string)result);
     return result;
 }
 string connected_drain_key(integer drain_num) {
-    return llList2Key(connected_drains, drain_num*STRIDE);
+    return llList2Key(connected_drain_keys, drain_num);
 }
 string connected_drain_name(integer drain_num) {
-    return llList2String(connected_drains, drain_num*STRIDE+1);
+    return llList2String(connected_drain_names, drain_num);
 }
 integer connected_drain_demand(integer drain_num) {
-    return llList2Integer(connected_drains, drain_num*STRIDE+2);
+    return llList2Integer(connected_drain_demands, drain_num);
 }
 integer connected_drain_rate(integer drain_num) {
-    return llList2Integer(connected_drains, drain_num*STRIDE+3);
+    return llList2Integer(connected_drain_rates, drain_num);
 }
 add_drain(string objectKey, string name) {
     //sayDebug(DEBUG, "add_drain ("+objectKey+", "+name+", "+(string)demand+", "+(string)rate+")");
     if (objectKey) {
-        connected_drains = connected_drains + [objectKey, name, 0, 0];
+        connected_drain_keys = connected_drain_keys + [objectKey];
+        connected_drain_names = connected_drain_names + [name];
+        connected_drain_demands = connected_drain_demands + [0];
+        connected_drain_rates = connected_drain_rates + [0];
         flush_drains(TRUE);
     } else {
         sayDebug(ERROR, "add_drain " + name + " had invalid key.");
@@ -490,7 +533,8 @@ add_drain(string objectKey, string name) {
 }
 update_drain_power(integer drain_num, integer demand, integer rate) {
     //sayDebug(DEBUG,"update_drain_power before "+list_drains());
-    connected_drains = llListReplaceList(connected_drains, [demand, rate], drain_num*STRIDE+2, drain_num*STRIDE+3);
+    connected_drain_demands = llListReplaceList(connected_drain_demands, [demand], drain_num, drain_num);
+    connected_drain_rates = llListReplaceList(connected_drain_rates, [rate], drain_num, drain_num);
     flush_drains(TRUE);
     //sayDebug(DEBUG,"update_drain_power after "+list_drains());
 }
@@ -546,9 +590,12 @@ handle_drain_disconnect_req(string objectKey, string objectName) {
     //sayDebug(DEBUG, "handle_drain_disconnect_req("+objectKey+", "+objectName+")");
     llPlaySound(kill_switch_1, 1);
     // [key, name, demand, rate]
-    integer drain_num = llListFindList(connected_drains, [objectKey]);
+    integer drain_num = drain_key_index(objectKey);
     if (drain_num > -1) {
-        connected_drains = llDeleteSubList(connected_drains, drain_num, drain_num+3);
+        connected_drain_keys = llDeleteSubList(connected_drain_keys, drain_num, drain_num);
+        connected_drain_names = llDeleteSubList(connected_drain_names, drain_num, drain_num);
+        connected_drain_demands = llDeleteSubList(connected_drain_demands, drain_num, drain_num);
+        connected_drain_rates = llDeleteSubList(connected_drain_rates, drain_num, drain_num);
         flush_drains(TRUE);
         request_power_from_sources();
         sayDebug(INFO, "Drain "+objectName+" was disconnected."); // warning
@@ -592,8 +639,7 @@ cut_all_drain_power()
     //sayDebug(DEBUG, "cut_all_power");
     integer drain_num;
     for (drain_num = drain_num; drain_num < num_connected_drains; drain_num = drain_num + 1) {
-        string objectKey = llList2Key(connected_drains, drain_num);
-        llRegionSayTo(objectKey, POWER_CHANNEL, POWER+ACK+"[0]");
+        llRegionSayTo(connected_drain_key(drain_num), POWER_CHANNEL, POWER+ACK+"[0]");
     }    
 }
 
@@ -603,7 +649,7 @@ string list_drains() {
     connected_drain_power_rate = 0;
     connected_drain_power_demand = 0;
     integer drain_num;
-    num_connected_drains = llGetListLength(connected_drains) / STRIDE; 
+    num_connected_drains = llGetListLength(connected_drain_keys); 
     if (num_connected_drains > 0) {
         for (drain_num = 0; drain_num < num_connected_drains; drain_num = drain_num + 1) {
             connected_drain_power_rate = connected_drain_power_rate + connected_drain_rate(drain_num);
@@ -735,6 +781,7 @@ default
     }
     
     link_message(integer Sender, integer Number, string message, key objectKey) {
+        sayDebug(DEBUG, "link_message "+(string)Number+" "+message);
         if (message == "STATUS") {
             report_status(objectKey);
         } else if (message == "Reset") {
