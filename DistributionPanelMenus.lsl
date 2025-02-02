@@ -136,25 +136,40 @@ integer get_num_connected_drains() {
     return (integer)llLinksetDataRead("num_connected_drains"); 
 }
 
-list connected_drains = [];
+list connected_drain_keys = []; 
+list connected_drain_names = []; 
+list connected_drain_demands = []; 
+list connected_drain_rates = []; 
+integer num_connected_drains = 0;
 
-get_connected_drains() {
-    connected_drains = llJson2List(llLinksetDataRead("connected_drains"));
-    sayDebug(DEBUG, "get_connected_drains get_num_connected_drains():"+(string)get_num_connected_drains());
-    sayDebug(DEBUG, "get_connected_drains connected_drains:"+(string)connected_drains);
+read_connected_drains() {
+    connected_drain_keys = llJson2List(llLinksetDataRead("connected_drain_keys"));
+    connected_drain_names = llJson2List(llLinksetDataRead("connected_drain_names"));
+    connected_drain_demands = llJson2List(llLinksetDataRead("connected_drain_demands"));
+    connected_drain_rates = llJson2List(llLinksetDataRead("connected_drain_rates"));
+    num_connected_drains = llGetListLength(connected_drain_keys);
 }
 
-key connected_drain_key(integer i) {
-    return llList2Key(connected_drains, i*4);
+integer drain_key_index(string objectKey) {
+    integer result;
+    if (num_connected_drains == 0) {
+        result = -1;
+    } else {
+        result = llListFindList(connected_drain_keys, [objectKey]);
+    }
+    return result;
 }
-string connected_drain_name(integer i) {
-    return llList2String(connected_drains, i*4+1);
+string connected_drain_key(integer drain_num) {
+    return llList2Key(connected_drain_keys, drain_num);
 }
-integer connected_drain_demand(integer i) {
-    return llList2Integer(connected_drains, i*4+2);
+string connected_drain_name(integer drain_num) {
+    return llList2String(connected_drain_names, drain_num);
 }
-integer connected_drain_rate(integer i) {
-    return llList2Integer(connected_drains, i*4+3);
+integer connected_drain_demand(integer drain_num) {
+    return llList2Integer(connected_drain_demands, drain_num);
+}
+integer connected_drain_rate(integer drain_num) {
+    return llList2Integer(connected_drain_rates, drain_num);
 }
 
 // ****************************************************
@@ -339,7 +354,7 @@ presentDisonnectDrainMenu(key whoClicked) {
     string message = "Select Power Drain to Disconnect:";
     integer i;
     list buttons = [];
-    get_connected_drains();
+    read_connected_drains();
     for (i = 0; i < get_num_connected_drains(); i = i + 1) {
         message = message + "\n" + (string)i + " " + 
             connected_drain_name(i) + " " + EngFormat(connected_drain_demand(i));
@@ -423,7 +438,7 @@ report_status(string objectKey) {
     status = status + list_known_sources();
     status = status + list_connected_sources();
     status = status + "\n-----\n" + "Free Memory: " + (string)llGetFreeMemory();
-    sayDebug(INFO, status);
+    sayDebug(DEBUG, status);
 }
 default
 {
@@ -483,12 +498,12 @@ default
                 sayDebug(DEBUG, "listen DISCONNECT_SOURCE from "+name+": "+message);
                 key source_key = connected_source_key((integer)message);
                 llRegionSayTo(source_key, POWER_CHANNEL, DISCONNECT+REQ);
-                llMessageLinked(LINK_SET, (integer)message, DISCONNECT_DRAIN, source_key);
+                llMessageLinked(LINK_SET, (integer)message, DISCONNECT+REQ, source_key);
             } else if (menuIdentifier == DISCONNECT_DRAIN) {
                 sayDebug(DEBUG, "listen DISCONNECT_DRAIN from "+name+": "+message);
                 key drain_key = connected_drain_key((integer)message);
-                llRegionSayTo(drain_key, POWER_CHANNEL, DISCONNECT+ACK);
-                llMessageLinked(LINK_SET, (integer)message, DISCONNECT+ACK, drain_key);
+                llRegionSayTo(drain_key, POWER_CHANNEL, DISCONNECT+REQ);
+                llMessageLinked(LINK_SET, (integer)message, DISCONNECT+REQ, drain_key);
             } else if (trimMessageButton(message) == POWER) {
                 power_state = !power_state;
                 llMessageLinked(LINK_SET, power_state, POWER, NULL_KEY);
