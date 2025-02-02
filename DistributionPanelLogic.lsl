@@ -37,7 +37,7 @@ integer DEBUG = 3;
 integer TRACE = 4;
 string DEBUG_LEVELS = "DebugLevels";
 list debug_levels = ["Error", "Warming", "Info", "Debug", "Trace"];
-integer debug_level = 3; // debug normally 2 info. 
+integer debug_level = 2; // debug normally 2 info. 
 
 sayDebug(integer message_level, string message) {
     message = "Logic "+llList2String(debug_levels, message_level) + ": " + message;
@@ -108,11 +108,11 @@ initialize_known_sources() {
     write_known_sources();
 }
 
-integer known_source_key_index(string objectKey) {
+integer known_source_key_index(string source_key) {
     if (num_known_sources == 0) {
         return -1;
     }
-    integer result = llListFindList(known_source_keys, [objectKey]);
+    integer result = llListFindList(known_source_keys, [source_key]);
     return result;
 }
 string known_source_key(integer source_num) {
@@ -235,12 +235,12 @@ initialize_connected_sources() {
     calculate_source_power_capacity();
 }
 
-integer connected_source_key_index(string objectKey) {
+integer connected_source_key_index(string source_key) {
     integer result;
     if (num_connected_sources == 0) {
         result = -1;
     } else {
-        result = llListFindList(connected_source_keys, [objectKey]);
+        result = llListFindList(connected_source_keys, [source_key]);
     }
     return result;
 }
@@ -284,33 +284,33 @@ calculate_source_power_rate() {
     //sayDebug(DEBUG, "calculate_source_power_rate:"+EngFormat(connected_source_power_rate));
 }
 
-handle_source_connect_ack(string objectKey, string objectName, integer source_capacity) {
+handle_source_connect_ack(string source_key, string objectName, integer source_capacity) {
     // a source said yes to power request.
     // Add it to our list of sources and recalculate power capacity
     //sayDebug(DEBUG, "handle_source_connect_ack("+objectName+"): "+EngFormat(source_capacity));
 
     // Handle bad requests
-    if (known_source_key_index(objectKey) < 0) {
+    if (known_source_key_index(source_key) < 0) {
         sayDebug(ERROR, objectName+" was not known."); // error
         return;
     }
-    if (connected_source_key_index(objectKey) >= 0) {
+    if (connected_source_key_index(source_key) >= 0) {
         sayDebug(WARN, objectName+" was already connected as a Source.");
         return;
     }
-    if (llListFindList(connected_drain_keys, [objectKey]) >= 0) {
+    if (llListFindList(connected_drain_keys, [source_key]) >= 0) {
         sayDebug(WARN, objectName+" was already connected as a Drain.");
         return;
     }
     
     // delete from known sources *** Enable this if we need to save space
-    //integer index = known_source_key_index(objectKey);
+    //integer index = known_source_key_index(source_key);
     //known_sources = llDeleteSubList(known_sources, index, index);
     //write_known_sources();
     
     // register the source
     llPlaySound(kill_switch_1, 1);
-    connected_source_keys = connected_source_keys + [objectKey];
+    connected_source_keys = connected_source_keys + [source_key];
     connected_source_names = connected_source_names + [objectName];
     connected_source_capacitys = connected_source_capacitys + [source_capacity];
     connected_source_rates = connected_source_rates + [0];
@@ -320,28 +320,28 @@ handle_source_connect_ack(string objectKey, string objectName, integer source_ca
     //sayDebug(INFO, "handle_source_connect_ack connected "+objectName);
 }
 
-handle_source_disconnect_ack(string objectKey, string objectName) {
+handle_disconnect_ack(string source_key, string objectName) {
     // a source acknowledges disconnection
     // delete from list of sources and recalculate capacity
-    //sayDebug(DEBUG, "handle_source_disconnect_ack("+(string)objectKey+", "+objectName+")");
+    //sayDebug(DEBUG, "handle_disconnect_ack("+(string)source_key+", "+objectName+")");
 
-    integer source_num = connected_source_key_index(objectKey);
+    integer source_num = connected_source_key_index(source_key);
     if (source_num > -1) {
         llPlaySound(kill_switch_1, 1);
-        //sayDebug(DEBUG,"handle_source_disconnect_ack \""+connected_source_name(source_num)+"\"");
-        //sayDebug(DEBUG,"handle_source_disconnect_ack1"+list_connected_sources());
+        //sayDebug(DEBUG,"handle_disconnect_ack \""+connected_source_name(source_num)+"\"");
+        //sayDebug(DEBUG,"handle_disconnect_ack1"+list_connected_sources());
         connected_source_keys = llDeleteSubList(connected_source_keys, source_num, source_num);
         connected_source_names = llDeleteSubList(connected_source_names, source_num, source_num);
         connected_source_capacitys = llDeleteSubList(connected_source_capacitys, source_num, source_num);
         connected_source_rates = llDeleteSubList(connected_source_rates, source_num, source_num);
-        //sayDebug(DEBUG,"handle_source_disconnect_ack2"+list_connected_sources());
+        //sayDebug(DEBUG,"handle_disconnect_ack2"+list_connected_sources());
         write_connected_sources();
         calculate_source_power_capacity();
         calculate_source_power_rate();
         request_power_from_sources();
-        sayDebug(INFO, "handle_source_disconnect_ack disconnected "+objectName);
+        sayDebug(INFO, "handle_disconnect_ack disconnected "+objectName);
     } else {
-        sayDebug(WARN, "handle_source_disconnect_ack("+objectName+"): was not connected.");
+        sayDebug(WARN, "handle_disconnect_ack("+objectName+"): was not connected.");
     }
 }
 
@@ -381,9 +381,6 @@ handle_source_power_ack(string source_key, string source_name, integer source_po
         for (drain_num = 0; drain_num < num_connected_drains; drain_num = drain_num + 1) {
             integer demand = connected_drain_demand(drain_num);
             update_drain_power(drain_num, demand, demand);
-            string message = POWER+ACK+"["+EngFormat(demand)+"]";
-            //sayDebug(DEBUG, "handle_source_power_ack sending "+message+" to " + connected_drain_name(drain_num));
-            llRegionSayTo(connected_drain_key(drain_num), POWER_CHANNEL, message);
             }
     
         // failure point. If our total power drain is more than we can get, we shut down.
@@ -416,11 +413,13 @@ request_power_from_sources() {
             string source_key = connected_source_key(source_num);
             if (source_num == 0) {
                 //send power request to first source
-                //sayDebug(DEBUG, "request_power_from_sources 1 "+EngFormat(first_demand)+ " from " + connected_source_name(source_num));
+                //sayDebug(DEBUG, "request_power_from_sources 1 "+
+                //EngFormat(first_demand)+ " from " + connected_source_name(source_num));
                 llRegionSayTo(source_key, POWER_CHANNEL, POWER+REQ+"["+(string)first_demand+"]");
             } else {
                 // send power requests to other sources
-                //sayDebug(DEBUG, "request_power_from_sources 2 "+EngFormat(distributed_power_demand)+ " from " + connected_source_name(source_num));
+                //sayDebug(DEBUG, "request_power_from_sources 2 "+
+                //EngFormat(distributed_power_demand)+ " from " + connected_source_name(source_num));
                 llRegionSayTo(source_key, POWER_CHANNEL, POWER+REQ+"["+(string)distributed_power_demand+"]");
             }
         }
@@ -496,15 +495,13 @@ flush_drains(integer write) {
     calculate_drain_power_rate();
 }
 
-integer drain_key_index(string objectKey) {
+integer drain_key_index(string drain_key) {
     integer result;
     if (num_connected_drains == 0) {
-        //sayDebug(DEBUG, "drain_key_index list length was 0");
         result = -1;
     } else {
-        result = llListFindList(connected_drain_keys, [objectKey]);
+        result = llListFindList(connected_drain_keys, [drain_key]);
     }
-    //sayDebug(DEBUG, "drain_key_index("+objectKey+") returns "+(string)result);
     return result;
 }
 string connected_drain_key(integer drain_num) {
@@ -519,10 +516,10 @@ integer connected_drain_demand(integer drain_num) {
 integer connected_drain_rate(integer drain_num) {
     return llList2Integer(connected_drain_rates, drain_num);
 }
-add_drain(string objectKey, string name) {
-    //sayDebug(DEBUG, "add_drain ("+objectKey+", "+name+", "+(string)demand+", "+(string)rate+")");
-    if (objectKey) {
-        connected_drain_keys = connected_drain_keys + [objectKey];
+add_drain(string drain_key, string name) {
+    //sayDebug(DEBUG, "add_drain ("+drain_key+", "+name+", "+(string)demand+", "+(string)rate+")");
+    if (drain_key) {
+        connected_drain_keys = connected_drain_keys + [drain_key];
         connected_drain_names = connected_drain_names + [name];
         connected_drain_demands = connected_drain_demands + [0];
         connected_drain_rates = connected_drain_rates + [0];
@@ -537,29 +534,33 @@ update_drain_power(integer drain_num, integer demand, integer rate) {
     connected_drain_rates = llListReplaceList(connected_drain_rates, [rate], drain_num, drain_num);
     flush_drains(TRUE);
     //sayDebug(DEBUG,"update_drain_power after "+list_drains());
+    string message = POWER+ACK+"["+EngFormat(demand)+"]";
+    //sayDebug(DEBUG, "handle_source_power_ack sending "+message+
+    //" to " + connected_drain_name(drain_num));
+    llRegionSayTo(connected_drain_key(drain_num), POWER_CHANNEL, message);
 }
 
-handle_drain_ping_req(string objectKey) {
+handle_drain_ping_req(string drain_key) {
     // respond to ping with max power capacity
     //sayDebug(DEBUG, "handle_drain_ping_req");
-    llRegionSayTo(objectKey, POWER_CHANNEL, PING+ACK+"["+(string)MAX_POWER_CAPACITY+"]");
+    llRegionSayTo(drain_key, POWER_CHANNEL, PING+ACK+"["+(string)MAX_POWER_CAPACITY+"]");
 }
-handle_drain_connect_req(string objectKey, string objectName) {
+handle_drain_connect_req(string drain_key, string objectName) {
     // a power drain wants power. 
     // add it to our list of power drains
-    //sayDebug(DEBUG, "handle_drain_connect_req("+(string)objectKey+", "+objectName+")");
+    //sayDebug(DEBUG, "handle_drain_connect_req("+(string)drain_key+", "+objectName+")");
     llPlaySound(kill_switch_1, 1);
-    if (drain_key_index(objectKey) > -1) {
+    if (drain_key_index(drain_key) > -1) {
         sayDebug(INFO, "Reconnecting Drain " + objectName);
-        llRegionSayTo(objectKey, POWER_CHANNEL, CONNECT+ACK+"["+(string)MAX_POWER_CAPACITY+"]");
+        llRegionSayTo(drain_key, POWER_CHANNEL, CONNECT+ACK+"["+(string)MAX_POWER_CAPACITY+"]");
         return;
     }
-    if (connected_source_key_index(objectKey) > -1) {
+    if (connected_source_key_index(drain_key) > -1) {
         sayDebug(WARN, objectName+" was already connecred as a Source.");
         return;
     }
-    add_drain(objectKey, objectName);
-    llRegionSayTo(objectKey, POWER_CHANNEL, CONNECT+ACK+"["+(string)MAX_POWER_CAPACITY+"]");
+    add_drain(drain_key, objectName);
+    llRegionSayTo(drain_key, POWER_CHANNEL, CONNECT+ACK+"["+(string)MAX_POWER_CAPACITY+"]");
 }
 
 calculate_drain_power_demand() {
@@ -584,14 +585,15 @@ calculate_drain_power_rate() {
     //sayDebug(DEBUG, "calculate_drain_power_rate() returns "+EngFormat(connected_drain_power_rate));
 }
 
-handle_drain_disconnect_req(string objectKey, string objectName) {
-    // a drain was disconnected. 
+handle_disconnect_req(string objectKey, string objectName) {
+    // a source or drain drain requests disconnect. 
     // Remove it from our list of drains. 
-    //sayDebug(DEBUG, "handle_drain_disconnect_req("+objectKey+", "+objectName+")");
+    //sayDebug(DEBUG, "handle_disconnect_req("+objectKey+", "+objectName+")");
     llPlaySound(kill_switch_1, 1);
-    // [key, name, demand, rate]
     integer drain_num = drain_key_index(objectKey);
+    integer source_num = connected_source_key_index(objectKey);
     if (drain_num > -1) {
+        update_drain_power(drain_num, 0, 0);
         connected_drain_keys = llDeleteSubList(connected_drain_keys, drain_num, drain_num);
         connected_drain_names = llDeleteSubList(connected_drain_names, drain_num, drain_num);
         connected_drain_demands = llDeleteSubList(connected_drain_demands, drain_num, drain_num);
@@ -599,22 +601,30 @@ handle_drain_disconnect_req(string objectKey, string objectName) {
         flush_drains(TRUE);
         request_power_from_sources();
         sayDebug(INFO, "Drain "+objectName+" was disconnected."); // warning
+    } else if (source_num > -1) {
+        connected_source_keys = llDeleteSubList(connected_source_keys, source_num, source_num);
+        connected_source_names = llDeleteSubList(connected_source_names, source_num, source_num);
+        connected_source_capacitys = llDeleteSubList(connected_source_capacitys, source_num, source_num);
+        connected_source_rates = llDeleteSubList(connected_source_rates, source_num, source_num);
+        write_connected_sources();
+        request_power_from_sources();
+        sayDebug(INFO, "source "+objectName+" was disconnected."); // warning
     } else {
-        sayDebug(INFO, "Drain "+objectName+" was not connected."); // waning
+        sayDebug(INFO, objectName+" was not connected."); // waning
     }
     llRegionSayTo(objectKey, POWER_CHANNEL, DISCONNECT+ACK);
 }
 
-handle_drain_power_request(string objectKey, string objectName, integer powerRequest) {
+handle_drain_power_request(string drain_key, string objectName, integer powerRequest) {
     // a source is asking for power. 
-    //sayDebug(DEBUG, "handle_drain_power_request ["+objectKey+"] "+objectName+" requests "+EngFormat(powerRequest));
+    //sayDebug(DEBUG, "handle_drain_power_request ["+drain_key+"] "+objectName+" requests "+EngFormat(powerRequest));
     //sayDebug(DEBUG, "handle_drain_power_request "+list_drains());
     //sayDebug(DEBUG, "handle_drain_power_request power_switch_state:"+
     //    on_off_string(power_switch_state));
     //sayDebug(DEBUG, "handle_drain_power_request connected_source_power_capacity:" +
     //    EngFormat(connected_source_power_capacity));
     //sayDebug(DEBUG, "handle_drain_power_request powerRequest:" + EngFormat(powerRequest));
-    integer drain_num = drain_key_index(objectKey);
+    integer drain_num = drain_key_index(drain_key);
     if (drain_num >= 0) {
         integer power_granted = 0;
         if (power_switch_state & connected_source_power_capacity >= powerRequest) {
@@ -627,7 +637,7 @@ handle_drain_power_request(string objectKey, string objectName, integer powerReq
         update_drain_power(drain_num, powerRequest, power_granted);
         request_power_from_sources(); // this ill come back as POWER+ACK and be handled in handle_source_power_ack()
     } else {
-        sayDebug(ERROR, "handle_drain_power_request object "+objectKey+" was not connected");
+        sayDebug(ERROR, "handle_drain_power_request object "+drain_key+" was not connected");
         return;
     }
 }
@@ -752,7 +762,7 @@ string EngFormat(integer quantity) {
     return (string)revisedQuantity+prefix;
 }
 
-report_status(string objectKey) {
+report_status() {
     string status;
     status = status + "\n" + "Device Report for "+llGetObjectName()+":";
     status = status + "\n" + "Power: " + on_off_string(power_switch_state);
@@ -782,8 +792,8 @@ default
     
     link_message(integer Sender, integer Number, string message, key objectKey) {
         sayDebug(DEBUG, "link_message "+(string)Number+" "+message);
-        if (message == "STATUS") {
-            report_status(objectKey);
+        if (message == "Status") {
+            report_status();
         } else if (message == "Reset") {
             initialize_known_sources();
             initialize_connected_sources();
@@ -793,12 +803,12 @@ default
             setDebugLevelByNumber(Number);
         } else if (message == PING) {
             send_source_ping_req();
-        } else if (message == "Status") {
-            report_status(objectKey);
         } else if (message == "Power") {
             switch_power(Number);
+        } else if (message == DISCONNECT+REQ) {
+            handle_disconnect_req(objectKey, "menu");
         } else if (message == DISCONNECT+ACK) {
-            handle_source_disconnect_ack(objectKey, "me");
+            handle_disconnect_ack(objectKey, "menu");
         } else {
             sayDebug(ERROR, "did not handle link message "+(string)Number+", "+message);
         }
@@ -809,7 +819,7 @@ default
         if (channel == POWER_CHANNEL) {
             string trimmed_message = trimMessageParameters(message);
             integer parameter = getMessageParameter(message);
-            //sayDebug(DEBUG, "listen \""+name+"\" says \""+message + "\"");
+            sayDebug(DEBUG, "listen \""+name+"\" says \""+message + "\"");
             if (message == PING+REQ) {
                 handle_drain_ping_req(objectKey);
             } else if (trimmed_message == PING+ACK) {
@@ -819,9 +829,9 @@ default
             } else if (trimmed_message == CONNECT+ACK) {
                 handle_source_connect_ack(objectKey, name, parameter);
             } else if (trimmed_message == DISCONNECT+REQ) {
-                handle_drain_disconnect_req(objectKey, name);
+                handle_disconnect_req(objectKey, name);
             } else if (trimmed_message == DISCONNECT+ACK) {
-                handle_source_disconnect_ack(objectKey, name);
+                handle_disconnect_ack(objectKey, name);
             } else if (trimmed_message == POWER+REQ) {
                 handle_drain_power_request(objectKey, name, parameter);
             } else if (trimmed_message == POWER+ACK) {
