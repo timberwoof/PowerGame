@@ -60,36 +60,41 @@ integer get_num_known_sources() {
     return (integer)llLinksetDataRead("num_known_sources"); 
 }
 
-list known_sources = [];
+list known_source_keys;
+list known_source_names;
+list known_source_powers;
+list known_source_distances;
+integer num_known_sources = 0;
 
-get_known_sources() {
-    // [key, name, power, distance]
-    known_sources = llJson2List(llLinksetDataRead("known_sources"));
-    //known_sources = llListSortStrided(known_sources, 4, 3, TRUE);
-    // Can't do this. The indexes end up wrong in Logic.
-    sayDebug(TRACE, "get_known_sources get_num_known_sources():"+(string)get_num_known_sources());
-    sayDebug(TRACE, "get_known_sources known_sources:"+(string)known_sources);
+read_known_sources() {
+    sayDebug(DEBUG,"read_known_sources");
+    known_source_keys = llJson2List(llLinksetDataRead("known_source_keys"));
+    known_source_names = llJson2List(llLinksetDataRead("known_source_names"));
+    known_source_powers = llJson2List(llLinksetDataRead("known_source_powers"));
+    known_source_distances = llJson2List(llLinksetDataRead("known_source_distances"));
+    num_known_sources = llGetListLength(known_source_keys);
 }
 
-release_known_sources() {
-    known_sources = [];
-}
-
-key known_source_key(integer i) {
-    get_known_sources();
-    key result = llList2Key(known_sources, i*4);
-    release_known_sources();
+integer known_source_key_index(string objectKey) {
+    if (num_known_sources == 0) {
+        return -1;
+    }
+    integer result = llListFindList(known_source_keys, [objectKey]);
     return result;
 }
-string known_source_name(integer i) {
-    return llList2String(known_sources, i*4+1);
+string known_source_key(integer source_num) {
+    return llList2Key(known_source_keys, source_num);
 }
-integer known_source_power(integer i) {
-    return llList2Integer(known_sources, i*4+2);
+string known_source_name(integer source_num) {
+    return llList2String(known_source_names, source_num);
 }
-integer known_source_distance(integer i) {
-    return llList2Integer(known_sources, i*4+3);
+integer known_source_power(integer source_num) {
+    return llList2Integer(known_source_powers, source_num);
 }
+integer known_source_distance(integer source_num) {
+    return llList2Integer(known_source_distances, source_num);
+}
+
 
 // conected Sources
 // [key, name, capacity, rate]
@@ -97,31 +102,33 @@ integer get_num_connected_sources() {
     return (integer)llLinksetDataRead("num_connected_sources"); 
 }
 
-list connected_sources = [];
+list connected_source_keys; 
+list connected_source_names; 
+list connected_source_capacitys; 
+list connected_source_rates; 
+integer num_connected_sources = 0;
 
-get_connected_sources() {
-    connected_sources = llJson2List(llLinksetDataRead("connected_sources"));
-    sayDebug(DEBUG, "get_connected_sources get_num_connected_sources():"+(string)get_num_connected_sources());
-    sayDebug(DEBUG, "get_connected_sources connected_sources:"+(string)connected_sources);
-}
-
-release_connected_sources() {
-    connected_sources = [];
-}
-
-key connected_source_key(integer i) {
-    return llList2Key(connected_sources, i*4);
-}
-string connected_source_name(integer i) {
-    return llList2String(connected_sources, i*4+1);
-}
-integer connected_source_capacity(integer i) {
-    return llList2Integer(connected_sources, i*4+2);
-}
-integer connected_source_rate(integer i) {
-    return llList2Integer(connected_sources, i*4+3);
+read_connected_sources() {
+    //sayDebug(DEBUG,"read_connected_sources");
+    connected_source_keys = llJson2List(llLinksetDataRead("connected_source_keys"));
+    connected_source_names = llJson2List(llLinksetDataRead("connected_source_names"));
+    connected_source_capacitys = llJson2List(llLinksetDataRead("connected_source_capacitys"));
+    connected_source_rates = llJson2List(llLinksetDataRead("connected_source_rates"));
+    num_connected_sources = llGetListLength(connected_source_keys);
 }
 
+string connected_source_key(integer source_num) {
+    return llList2Key(connected_source_keys, source_num);
+}
+string connected_source_name(integer source_num) {
+    return llList2String(connected_source_names, source_num);
+}
+integer connected_source_capacity(integer source_num) {
+    return llList2Integer(connected_source_capacitys, source_num);
+}
+integer connected_source_rate(integer source_num) {
+    return llList2Integer(connected_source_rates, source_num);
+}
 
 // conected drains
 // [key, name, demand, rate]
@@ -135,10 +142,6 @@ get_connected_drains() {
     connected_drains = llJson2List(llLinksetDataRead("connected_drains"));
     sayDebug(DEBUG, "get_connected_drains get_num_connected_drains():"+(string)get_num_connected_drains());
     sayDebug(DEBUG, "get_connected_drains connected_drains:"+(string)connected_drains);
-}
-
-release_connected_drains() {
-    connected_drains = [];
 }
 
 key connected_drain_key(integer i) {
@@ -297,7 +300,7 @@ presentDebugLevelMenu(key whoClicked) {
 }
 
 presentConnectSourceMenu(key whoClicked) {
-    get_known_sources();
+    read_known_sources();
     
     // If this needs otbe put into sorted order, 
     // Then we need to make a local copy of this list 
@@ -307,7 +310,6 @@ presentConnectSourceMenu(key whoClicked) {
     string message = "Select Power Source:";
     integer i;
     list buttons = [];
-    get_connected_sources();
     for (i = 0; i < get_num_known_sources() & i < 12; i = i + 1) {
         string item = "\n" + (string)i + ": " + known_source_name(i) + " (" +
             EngFormat(known_source_power(i)) + ") " + (string)known_source_distance(i) + "m";
@@ -317,7 +319,6 @@ presentConnectSourceMenu(key whoClicked) {
             buttons = buttons + [(string)i];
         }
     }
-    release_known_sources();
     setUpMenu(CONNECT_SOURCE, whoClicked, message, buttons);    
 }
 
@@ -325,7 +326,7 @@ presentDisonnectSourceMenu(key whoClicked) {
     string message = "Select Power Source to Disconnect:";
     integer i;
     list buttons = [];
-    get_connected_sources();
+    read_connected_sources();
     for (i = 0; i < get_num_connected_sources(); i = i + 1) {
         message = message + "\n" + (string)i + " " + 
             connected_source_name(i) + " " + EngFormat(connected_source_capacity(i));
@@ -370,12 +371,68 @@ string EngFormat(integer quantity) {
     return (string)revisedQuantity+prefix;
 }
 
+string formatDebug(integer message_level, string message) {
+    string result = "";
+    if (message_level <= debug_level) {
+        result = message;
+    }
+    return result;
+}
+
+string list_known_sources() {
+    string result;
+    result = result + "\n-----\nKnown Power Sources: capacity, distance";
+    read_known_sources();
+    if (num_known_sources > 0) {
+        integer source_num;
+        for (source_num = 0; source_num < num_known_sources; source_num = source_num + 1) {
+            result = result + "\n" +  
+                formatDebug(TRACE, "["+known_source_key(source_num)+"] ")  +
+                known_source_name(source_num) + ": " + 
+                EngFormat(known_source_power(source_num))+", " + 
+                (string)known_source_distance(source_num)+"m";
+        }
+    } else {
+        result = result + "\n" +  "No Power Sources known.";
+    }
+    return result;
+}
+
+string list_connected_sources() {
+    string result;
+    result = result + "\n-----\nConnected Power Sources: (rate/capacity)";
+    read_connected_sources();
+    if (num_connected_sources > 0) {
+        integer source_num;
+        for (source_num = 0; source_num < num_connected_sources; source_num = source_num + 1) {
+            result = result + "\n" +  
+                formatDebug(TRACE, "["+connected_source_key(source_num)+"] ")  +
+                connected_source_name(source_num) + ": " +  
+                EngFormat(connected_source_rate(source_num))+"/" + 
+                EngFormat(connected_source_capacity(source_num));
+        }
+    } else {
+        result = result + "\n" +  "No Power Sources Connected.";
+    }
+    return result;
+}
+
+report_status(string objectKey) {
+    string status;
+    status = status + "\n" + "Device Report for "+llGetObjectName()+":";
+    status = status + list_known_sources();
+    status = status + list_connected_sources();
+    status = status + "\n-----\n" + "Free Memory: " + (string)llGetFreeMemory();
+    sayDebug(INFO, status);
+}
 default
 {
     state_entry()
     {
         sayDebug(DEBUG, "state_entry");
         setDebugLevelByNumber(DEBUG);
+        read_known_sources();
+        read_connected_sources();
         
         // listen to Novatech sonic screwdriver
         llListen(SONIC_CHANNEL, "", "", "ccSonic");
@@ -398,6 +455,7 @@ default
             if (message == CLOSE) {
                 sayDebug(TRACE, "listen Close");
             } else if (message == STATUS) {
+                report_status(objectKey);
                 llMessageLinked(LINK_SET, 0, STATUS, objectKey);
             } else if (message == RESET) {
                 sayDebug(TRACE, "listen Reset");
@@ -418,6 +476,8 @@ default
                 llMessageLinked(LINK_SET, debug_level, DEBUG_LEVELS, NULL_KEY);
             } else if (menuIdentifier == CONNECT_SOURCE) {
                 sayDebug(DEBUG, "listen CONNECT_SOURCE from "+name+": "+message);
+                sayDebug(DEBUG,known_source_key((integer)message));
+                sayDebug(DEBUG,known_source_name((integer)message));
                 llRegionSayTo(known_source_key((integer)message), POWER_CHANNEL, CONNECT+REQ);
             } else if (menuIdentifier == DISCONNECT_SOURCE) {
                 sayDebug(DEBUG, "listen DISCONNECT_SOURCE from "+name+": "+message);
