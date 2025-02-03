@@ -2,13 +2,15 @@
 // Menu and Message Utilities
 // This is all about communicting with the user.
 
+string menuVersion = "2025-02-03 1";
+string debug_string = "Info";
+
 // constants
 integer MONITOR_CHANNEL = -6546478;
 integer POWER_CHANNEL = -654647;
 
 // interface to Novatech Sonic Screwdriver
 integer SONIC_CHANNEL = -313331;    // Used by sonic screwdrivers. Do not change!
-
 
 // *********************************
 // Debug system
@@ -20,7 +22,7 @@ integer DEBUG = 3;
 integer TRACE = 4;
 string DEBUG_LEVELS = "DebugLevels";
 list debug_levels = ["Error", "Warming", "Info", "Debug", "Trace"];
-integer debug_level = 2; // debug normally 2 info. 
+integer debug_level = 0;
 sayDebug(integer message_level, string message) {
     message = "Menus "+llList2String(debug_levels, message_level) + ": " + message;
     if (message_level <= debug_level) {
@@ -64,6 +66,7 @@ list known_source_keys;
 list known_source_names;
 list known_source_powers;
 list known_source_distances;
+list known_source_distance_index; // local to Menu
 integer num_known_sources = 0;
 
 read_known_sources() {
@@ -95,6 +98,22 @@ integer known_source_distance(integer source_num) {
     return llList2Integer(known_source_distances, source_num);
 }
 
+sort_known_sources() {
+    // sort the indexes list so we can present known sources in distance order
+    known_source_distance_index = [];
+    integer i;
+    for (i = 0; i < num_known_sources; i = i + 1) {
+        known_source_distance_index = known_source_distance_index + [i, known_source_distance(i)];
+    }
+    known_source_distance_index = llListSortStrided(known_source_distance_index, 2, 1, TRUE);
+}
+
+integer unsort(integer i) {
+    // given a sorted index, return the unsorted index
+    return llList2Integer(known_source_distance_index, i*2);
+}
+
+
 
 // conected Sources
 // [key, name, capacity, rate]
@@ -106,7 +125,7 @@ list connected_source_keys;
 list connected_source_names; 
 list connected_source_capacitys; 
 list connected_source_rates; 
-integer num_connected_sources = 0;
+integer num_connected_sources = 0; // [unsorted_index, distance]
 
 read_connected_sources() {
     //sayDebug(DEBUG,"read_connected_sources");
@@ -290,7 +309,9 @@ resetMenu() {
 // Power Menus
 
 presentMainMenu(key whoClicked) {
-    string message = "Power Panel Main Menu";
+    string message = "Power Panel Main Menu \n" +
+        "Logic Version " + llLinksetDataRead("LogicVersion") + "\n" +
+        "Menu Version " + menuVersion;
     list buttons = [];
     buttons = buttons + STATUS;
     buttons = buttons + PING; 
@@ -316,18 +337,14 @@ presentDebugLevelMenu(key whoClicked) {
 
 presentConnectSourceMenu(key whoClicked) {
     read_known_sources();
-    
-    // If this needs otbe put into sorted order, 
-    // Then we need to make a local copy of this list 
-    // with an additional item in each stride, the original index. 
-    // The response must look up the original index. 
-   
+    sort_known_sources();
+    // The response must look up the original index with unsort()
     string message = "Select Power Source:";
     integer i;
     list buttons = [];
-    for (i = 0; i < get_num_known_sources() & i < 12; i = i + 1) {
-        string item = "\n" + (string)i + ": " + known_source_name(i) + " (" +
-            EngFormat(known_source_power(i)) + ") " + (string)known_source_distance(i) + "m";
+    for (i = 0; i < num_known_sources & i < 12; i = i + 1) {
+        string item = "\n" + (string)i + ": " + known_source_name(unsort(i)) + " (" +
+            EngFormat(known_source_power(unsort(i))) + ") " + (string)known_source_distance(unsort(i)) + "m";
         sayDebug(TRACE, item);
         if ((llStringLength(message) + llStringLength(item)) < 512) {
             message = message + item;
@@ -398,6 +415,7 @@ string list_known_sources() {
     string result;
     result = result + "\n-----\nKnown Power Sources: capacity, distance";
     read_known_sources();
+    sort_known_sources();
     if (num_known_sources > 0) {
         integer source_num;
         for (source_num = 0; source_num < num_known_sources; source_num = source_num + 1) {
@@ -445,12 +463,13 @@ default
     state_entry()
     {
         sayDebug(DEBUG, "state_entry");
-        setDebugLevelByNumber(DEBUG);
-        read_known_sources();
-        read_connected_sources();
+        setDebugLevelByName(debug_string);
         
         // listen to Novatech sonic screwdriver
         llListen(SONIC_CHANNEL, "", "", "ccSonic");
+
+        read_known_sources();
+        read_connected_sources();
 
         sayDebug(DEBUG, "state_entry done");
     }
@@ -475,6 +494,9 @@ default
             } else if (message == RESET) {
                 sayDebug(TRACE, "listen Reset");
                 llMessageLinked(LINK_SET, 0, message, NULL_KEY);
+                string otherScript = "DistributionPanelLogic "+llLinksetDataRead("LogicVersion");
+                llResetOtherScript(otherScript);
+                llSetScriptState(otherScript, TRUE);
                 llResetScript();
             } else if (message == DEBUG_LEVELS) {
                 presentDebugLevelMenu(objectKey);
@@ -493,7 +515,7 @@ default
                 sayDebug(DEBUG, "listen CONNECT_SOURCE from "+name+": "+message);
                 sayDebug(DEBUG,known_source_key((integer)message));
                 sayDebug(DEBUG,known_source_name((integer)message));
-                llRegionSayTo(known_source_key((integer)message), POWER_CHANNEL, CONNECT+REQ);
+                llRegionSayTo(known_source_key(unsort((integer)message)), POWER_CHANNEL, CONNECT+REQ);
             } else if (menuIdentifier == DISCONNECT_SOURCE) {
                 sayDebug(DEBUG, "listen DISCONNECT_SOURCE from "+name+": "+message);
                 key source_key = connected_source_key((integer)message);
