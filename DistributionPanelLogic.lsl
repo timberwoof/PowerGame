@@ -1,6 +1,9 @@
 // Power Distribution Panel 
 // This module is all about maintaining connecitons and doing calculations 
 
+string logicVersion = "2025-02-03.1";
+string debug_string = "Info";
+
 // Common Constants for the Power System 
 integer POWER_CHANNEL = -654647;
 integer MONITOR_CHANNEL = -6546478;
@@ -18,7 +21,7 @@ string POWER = "Power";
 string RESET = "Reset";
 string NONE = "None";
 
-// Global Cobstants and Variables for Power Distribution Oanel
+// Global Constants and Variables for Power Distribution Oanel
 integer MAX_POWER_CAPACITY = 10000; // 10kW how much power we can transfer total
 integer power_switch_state;
 
@@ -62,16 +65,12 @@ string formatDebug(integer message_level, string message) {
 }
 
 setDebugLevelByName(string debug_level_name) {
-    //sayDebug(TRACE,"setDebugLevelByName("+debug_level_name+")");
     debug_level = llListFindList(debug_levels, [debug_level_name]);
-    //sayDebug(TRACE,"setDebugLevelByName debug_level:"+(string)debug_level);
 }
 
 setDebugLevelByNumber(integer new_debug_level) {
-    //sayDebug(TRACE,"setDebugLevelByNumber("+(string)debug_level+")");
     debug_level = new_debug_level;
     string debug_level_name = llList2String(debug_levels, debug_level);
-    //sayDebug(TRACE,"setDebugLevelByNumber debug_level:"+debug_level_name);
 }
 
 // ********************************
@@ -80,10 +79,10 @@ list known_source_keys;
 list known_source_names;
 list known_source_powers;
 list known_source_distances;
+list known_source_distance_index; // local to Menu
 integer num_known_sources = 0;
 
 read_known_sources() {
-    //sayDebug(DEBUG,"read_known_sources");
     known_source_keys = llJson2List(llLinksetDataRead("known_source_keys"));
     known_source_names = llJson2List(llLinksetDataRead("known_source_names"));
     known_source_powers = llJson2List(llLinksetDataRead("known_source_powers"));
@@ -108,6 +107,22 @@ initialize_known_sources() {
     write_known_sources();
 }
 
+sort_known_sources() {
+    // sort the indexes list so we can present known sources in distance order
+    // used on ly in list report
+    known_source_distance_index = [];
+    integer i;
+    for (i = 0; i < num_known_sources; i = i + 1) {
+        known_source_distance_index = known_source_distance_index + [i, known_source_distance(i)];
+    }
+    known_source_distance_index = llListSortStrided(known_source_distance_index, 2, 1, TRUE);
+}
+
+integer unsorted(integer i) {
+    // given a sorted index, return the unsorted index
+    return llList2Integer(known_source_distance_index, i*2);
+}
+
 integer known_source_key_index(string source_key) {
     if (num_known_sources == 0) {
         return -1;
@@ -130,10 +145,8 @@ integer known_source_distance(integer source_num) {
 
 send_source_ping_req() {
     // Send a request for nearby power sources
-    //sayDebug (DEBUG, "send_source_ping_req");
     initialize_known_sources();
     llShout(POWER_CHANNEL, PING+REQ);
-    // llShout is okay because repsonses give position
 }
 
 handle_source_ping_ack(string source_name, string source_key, integer source_power) {
@@ -147,25 +160,31 @@ handle_source_ping_ack(string source_name, string source_key, integer source_pow
 
 add_known_source(string source_key, string source_name, integer source_power, float source_distance){
     //sayDebug (DEBUG, "add_known_source");
+    string filter = llGetObjectDesc();
+    if (llSubStringIndex(source_name, filter) == -1) {
+        sayDebug(INFO, "Ignored ping from " + source_name + " because its name did not contain " + filter);
+        return;
+    }
+    
     integer source_num = known_source_key_index(source_key);
     if (source_num >= 0) {
-        //sayDebug(ERROR, "Ignored ping from " + source_name + " because it was already in the list at " + (string)source_num);
+        sayDebug(ERROR, "Ignored ping from " + source_name + " because it was already in the list at " + (string)source_num);
         return;
     }
 
-    if (source_distance > 40) {
-        //sayDebug(INFO, "Ignored ping from "+source_name+ " because it was "+(string)source_distance+ "m away.");
+    if (source_distance > 60) {
+        sayDebug(INFO, "Ignored ping from "+source_name+ " because it was "+(string)source_distance+ "m away.");
         return;
     }
 
     if (num_known_sources >= 12) {
-        //sayDebug(INFO, "Ignored ping from "+source_name+ " because we already have 12 known sources.");
+        sayDebug(INFO, "Ignored ping from "+source_name+ " because we already have 12 known sources.");
         return;
     }
     
     if(source_key) {
     } else {
-        //sayDebug(ERROR, "Ignored ping from "+source_name+" because key was malformed.");
+        sayDebug(ERROR, "Ignored ping from "+source_name+" because key was malformed.");
         return;
     }
 
@@ -179,15 +198,20 @@ add_known_source(string source_key, string source_name, integer source_power, fl
 string list_known_sources() {
     string result;
     result = result + "\n-----\nKnown Power Sources: capacity, distance";
-    integer source_num;
+    sort_known_sources();
+    integer sorted_source_num;
     if (num_known_sources > 0) {
-        for (source_num = 0; source_num < num_known_sources; source_num = source_num + 1) {
+        for (sorted_source_num = 0; 
+            sorted_source_num < num_known_sources; 
+            sorted_source_num = sorted_source_num + 1) {
+            integer unsorted_index = unsorted(sorted_source_num);
             result = result + "\n" +  
-                formatDebug(TRACE, "["+known_source_key(source_num)+"] ")  +
-                known_source_name(source_num) + ": " +  
-                EngFormat(known_source_power(source_num))+", " + 
-                (string)known_source_distance(source_num)+"m";
+                formatDebug(TRACE, "["+known_source_key(unsorted_index)+"] ")  +
+                known_source_name(unsorted_index) + ": " +  
+                EngFormat(known_source_power(unsorted_index))+", " + 
+                (string)known_source_distance(unsorted_index)+"m";
         }
+    known_source_distance_index = [];
     } else {
         result = result + "\n" +  "No Power Sources known.";
     }
@@ -206,7 +230,6 @@ integer connected_source_power_capacity = 0;
 integer connected_source_power_rate = 0;
 
 read_connected_sources() {
-    //sayDebug(DEBUG,"read_connected_sources");
     connected_source_keys = llJson2List(llLinksetDataRead("connected_source_keys"));
     connected_source_names = llJson2List(llLinksetDataRead("connected_source_names"));
     connected_source_capacitys = llJson2List(llLinksetDataRead("connected_source_capacitys"));
@@ -216,7 +239,6 @@ read_connected_sources() {
 }
 
 write_connected_sources() {
-    //sayDebug(DEBUG,"write_connected_sources");
     num_connected_sources = llGetListLength(connected_source_keys);
     llLinksetDataWrite("num_connected_sources", (string)num_connected_sources);
     llLinksetDataWrite("connected_source_keys", llList2Json(JSON_ARRAY, connected_source_keys));
@@ -226,7 +248,6 @@ write_connected_sources() {
 }
 
 initialize_connected_sources() {
-    //sayDebug(DEBUG,"initialize_connected_sources");
     connected_source_keys = [];
     connected_source_names = [];
     connected_source_capacitys = [];
@@ -780,14 +801,15 @@ default
 {
     state_entry()
     {
-        setDebugLevelByNumber(DEBUG);
+        llLinksetDataWrite("LogicVersion",logicVersion);
+        setDebugLevelByName(debug_string);
         //sayDebug(DEBUG, "state_entry");
         read_known_sources();
         read_connected_sources();
         read_connected_drains();
         llListen(POWER_CHANNEL, "", NULL_KEY, "");
-        llSetTimerEvent(10);
-        //sayDebug(DEBUG, "state_entry done. Free Memory: " + (string)llGetFreeMemory());
+        //llSetTimerEvent(10);
+        sayDebug(DEBUG, "state_entry done. Free Memory: " + (string)llGetFreeMemory());
     }
     
     link_message(integer Sender, integer Number, string message, key objectKey) {
