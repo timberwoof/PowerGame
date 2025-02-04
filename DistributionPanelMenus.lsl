@@ -2,7 +2,7 @@
 // Menu and Message Utilities
 // This is all about communicting with the user.
 
-string menuVersion = "2025-02-03 1";
+string menuVersion = "2025-02-03 2";
 string debug_string = "Info";
 
 // constants
