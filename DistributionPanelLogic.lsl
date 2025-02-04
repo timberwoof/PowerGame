@@ -1,7 +1,7 @@
 // Power Distribution Panel 
 // This module is all about maintaining connecitons and doing calculations 
 
-string logicVersion = "2025-02-03 1";
+string logicVersion = "2025-02-03 2";
 string debug_string = "Info";
 
 // Global Constants and Variables for Power Distribution Oanel
@@ -230,7 +230,7 @@ integer connected_source_power_rate = 0;
 
 initialize_connected_sources() {
     integer i;
-    for (i = 0; i <= num_connected_sources; i = i + 1) {
+    for (i = 0; i <= 100; i = i + 1) {
         llLinksetDataDelete(SOURCE+(string)i+KEY);
         llLinksetDataDelete(SOURCE+(string)i+NAME);
         llLinksetDataDelete(SOURCE+(string)i+CAPACITY);
@@ -301,7 +301,7 @@ calculate_source_power_capacity() {
     //sayDebug(DEBUG, "calculate_source_power_capacity");
     connected_source_power_capacity = 0;
     integer source_num;
-    for (source_num = 0; source_num < num_connected_sources; source_num = source_num + 1) {
+    for (source_num = 1; source_num <= num_connected_sources; source_num = source_num + 1) {
         integer source_capacity = connected_source_capacity(source_num);
         connected_source_power_capacity = connected_source_power_capacity + source_capacity;
         //sayDebug(DEBUG, "calculate_source_power_capacity "+(string)source_num+": "+(string)source_capacity);
@@ -313,7 +313,7 @@ calculate_source_power_rate() {
     // Calculate the total we are receiving from all the sources
     connected_source_power_rate = 0;
     integer source_num;
-    for (source_num = 0; source_num < num_connected_sources; source_num = source_num + 1) {
+    for (source_num = 1; source_num <= num_connected_sources; source_num = source_num + 1) {
         integer source_rate = connected_source_rate(source_num);
         connected_source_power_rate = connected_source_power_rate + source_rate;
         //sayDebug(DEBUG, "calculate_source_power_rate "+(string)source_num+": "+(string)source_rate);
@@ -401,7 +401,7 @@ handle_source_power_ack(string source_key, string source_name, integer source_po
         //    EngFormat(connected_source_power_capacity) + ">=" +
         //    EngFormat(connected_drain_power_demand) );
         integer drain_num;
-        for (drain_num = 0; drain_num < num_connected_drains; drain_num = drain_num + 1) {
+        for (drain_num = 1; drain_num <= num_connected_drains; drain_num = drain_num + 1) {
             integer demand = connected_drain_demand(drain_num);
             update_drain_power(drain_num, demand, demand);
             }
@@ -432,7 +432,7 @@ request_power_from_sources() {
     
         // send power requests to each source
         integer source_num;
-        for (source_num = 0; source_num < num_connected_sources; source_num = source_num + 1) {
+        for (source_num = 1; source_num <= num_connected_sources; source_num = source_num + 1) {
             string source_key = connected_source_key(source_num);
             if (source_num == 0) {
                 //send power request to first source
@@ -481,12 +481,14 @@ integer connected_drain_power_demand;
 
 initialize_connected_drains() {
     integer i;
-    for (i = 0; i <= num_connected_sources; i = i + 1) {
+    for (i = 0; i <= 100; i = i + 1) {
         llLinksetDataDelete(DRAIN+(string)i+KEY);
         llLinksetDataDelete(DRAIN+(string)i+NAME);
         llLinksetDataDelete(DRAIN+(string)i+DEMAND);
         llLinksetDataDelete(DRAIN+(string)i+RATE);
     }
+    num_connected_drains = 0;
+    llLinksetDataWrite("num_connected_drains", (string)num_connected_drains); 
     calculate_source_power_capacity();
 }
 
@@ -495,7 +497,7 @@ integer drain_key_index(string drain_key) {
         return -1;
     }
     integer i;
-    for (i = 0; i < num_connected_drains; i = i + 1) {
+    for (i = 1; i <= num_connected_drains; i = i + 1) {
         if (llLinksetDataRead(DRAIN+(string)i+KEY) == drain_key) {
             return i;
         }
@@ -532,26 +534,26 @@ add_drain(string drain_key, string drain_name) {
 delete_drain(integer drain_num) {
     integer i;
     for (i = drain_num; i < num_connected_drains; i = i + 1) {
-        llLinksetDataWrite(DRAIN+(string)i+KEY, connected_source_key(i+1)); 
-        llLinksetDataWrite(DRAIN+(string)i+NAME, connected_source_name(i+1)); 
-        llLinksetDataWrite(DRAIN+(string)i+DEMAND, (string)connected_source_capacity(i+1)); 
-        llLinksetDataWrite(DRAIN+(string)i+RATE, (string)connected_source_rate(i+1));  
+        llLinksetDataWrite(DRAIN+(string)i+KEY, connected_drain_key(i+1)); 
+        llLinksetDataWrite(DRAIN+(string)i+NAME, connected_drain_name(i+1)); 
+        llLinksetDataWrite(DRAIN+(string)i+DEMAND, (string)connected_drain_demand(i+1)); 
+        llLinksetDataWrite(DRAIN+(string)i+RATE, (string)connected_drain_rate(i+1));  
     }
-    llLinksetDataDelete(DRAIN+(string)num_connected_sources+KEY);
-    llLinksetDataDelete(DRAIN+(string)num_connected_sources+NAME);
-    llLinksetDataDelete(DRAIN+(string)num_connected_sources+DEMAND);
-    llLinksetDataDelete(DRAIN+(string)num_connected_sources+RATE);
+    llLinksetDataDelete(DRAIN+(string)num_connected_drains+KEY);
+    llLinksetDataDelete(DRAIN+(string)num_connected_drains+NAME);
+    llLinksetDataDelete(DRAIN+(string)num_connected_drains+DEMAND);
+    llLinksetDataDelete(DRAIN+(string)num_connected_drains+RATE);
     num_connected_drains = num_connected_drains - 1;
     llLinksetDataWrite("num_connected_drains", (string)num_connected_drains); 
 }
 
 update_drain_power(integer drain_num, integer demand, integer rate) {
-    //sayDebug(DEBUG,"update_drain_power before "+list_drains());
-    llLinksetDataWrite(DRAIN+(string)num_connected_drains+DEMAND, (string)demand); 
-    llLinksetDataWrite(DRAIN+(string)num_connected_drains+RATE, (string)rate); 
+    sayDebug(DEBUG,"update_drain_power before "+list_drains());
+    llLinksetDataWrite(DRAIN+(string)drain_num+DEMAND, (string)demand); 
+    llLinksetDataWrite(DRAIN+(string)drain_num+RATE, (string)rate); 
     calculate_drain_power_demand();
     calculate_drain_power_rate();
-    //sayDebug(DEBUG,"update_drain_power after "+list_drains());
+    sayDebug(DEBUG,"update_drain_power after "+list_drains());
     string message = POWER+ACK+"["+EngFormat(demand)+"]";
     //sayDebug(DEBUG, "handle_source_power_ack sending "+message+
     //    " to " + connected_drain_name(drain_num));
@@ -586,7 +588,7 @@ calculate_drain_power_demand() {
     // Called by connect-req and disconnect-req
     connected_drain_power_demand = 0;
     integer drain_num;
-    for (drain_num = 0; drain_num < num_connected_drains; drain_num = drain_num + 1) {
+    for (drain_num = 1; drain_num <= num_connected_drains; drain_num = drain_num + 1) {
         connected_drain_power_demand = connected_drain_power_demand + connected_drain_demand(drain_num);
     }
     //sayDebug(DEBUG, "calculate_drain_power_demand() returns "+EngFormat(connected_drain_power_demand));
@@ -597,7 +599,7 @@ calculate_drain_power_rate() {
     // Called by connect-req and disconnect-req
     connected_drain_power_rate = 0;
     integer drain_num;
-    for (drain_num = 0; drain_num < num_connected_drains; drain_num = drain_num + 1) {
+    for (drain_num = 1; drain_num <= num_connected_drains; drain_num = drain_num + 1) {
         connected_drain_power_rate = connected_drain_power_rate + connected_drain_rate(drain_num);
     }
     //sayDebug(DEBUG, "calculate_drain_power_rate() returns "+EngFormat(connected_drain_power_rate));
@@ -660,7 +662,7 @@ cut_all_drain_power()
 {
     //sayDebug(DEBUG, "cut_all_power");
     integer drain_num;
-    for (drain_num = drain_num; drain_num < num_connected_drains; drain_num = drain_num + 1) {
+    for (drain_num = 1; drain_num <= num_connected_drains; drain_num = drain_num + 1) {
         llRegionSayTo(connected_drain_key(drain_num), POWER_CHANNEL, POWER+ACK+"[0]");
     }    
 }
@@ -672,7 +674,7 @@ string list_drains() {
     connected_drain_power_demand = 0;
     integer drain_num;
     if (num_connected_drains > 0) {
-        for (drain_num = 0; drain_num < num_connected_drains; drain_num = drain_num + 1) {
+        for (drain_num = 1; drain_num <= num_connected_drains; drain_num = drain_num + 1) {
             connected_drain_power_rate = connected_drain_power_rate + connected_drain_rate(drain_num);
             connected_drain_power_demand = connected_drain_power_demand + connected_drain_demand(drain_num);
             result = result + "\n" +  
@@ -703,14 +705,15 @@ switch_power(integer new_power_switch_state) {
     } else {
         // Cut power to all the drains.
         // This is fine. This is what we want to to. 
-        for (drain_num = 0; drain_num < num_connected_drains; drain_num = drain_num + 1) {
+        for (drain_num = 1; drain_num <= num_connected_drains; drain_num = drain_num + 1) {
             string drain_key = connected_drain_key(drain_num);
             llRegionSayTo(drain_key, POWER_CHANNEL, POWER+ACK+"[0]");
         }
         // Cut power from all the sources
         // This is fine., This is what we want to do. 
-        for (drain_num = 0; drain_num < num_connected_sources; drain_num = drain_num + 1) {
-            string source_key = connected_source_key(drain_num);
+        integer souce_num;
+        for (souce_num = 1; souce_num <= num_connected_sources; souce_num = souce_num + 1) {
+            string source_key = connected_source_key(souce_num);
             llRegionSayTo(source_key, POWER_CHANNEL, POWER+REQ+"[0]");
         }
     }
