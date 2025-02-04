@@ -12,6 +12,16 @@ integer POWER_CHANNEL = -654647;
 // interface to Novatech Sonic Screwdriver
 integer SONIC_CHANNEL = -313331;    // Used by sonic screwdrivers. Do not change!
 
+string KNOWN = "Known";
+string SOURCE = "Source";
+string DRAIN = "Drain";
+string KEY = "Key";
+string NAME = "Name";
+string DISTANCE = "Distance";
+string CAPACITY = "Capacity";
+string DEMAND = "Demand";
+string RATE = "Rate";
+
 // *********************************
 // Debug system
 // Higher numbers are lower priority.
@@ -50,70 +60,81 @@ setDebugLevelByNumber(integer new_debug_level) {
     sayDebug(TRACE,"setDebugLevelByNumber debug_level:"+debug_level_name);
 }
 
-
-// ******************************************
-// source and drain data lists
-// Stuff we need to know from the main script
 integer power_state;
 
 // Known Sources
-// [key, name, power, distance]
 integer get_num_known_sources() {
     return (integer)llLinksetDataRead("num_known_sources"); 
 }
 
-list known_source_keys;
-list known_source_names;
-list known_source_powers;
-list known_source_distances;
-list known_source_distance_index; // local to Menu
-integer num_known_sources = 0;
-
-read_known_sources() {
-    sayDebug(DEBUG,"read_known_sources");
-    known_source_keys = llJson2List(llLinksetDataRead("known_source_keys"));
-    known_source_names = llJson2List(llLinksetDataRead("known_source_names"));
-    known_source_powers = llJson2List(llLinksetDataRead("known_source_powers"));
-    known_source_distances = llJson2List(llLinksetDataRead("known_source_distances"));
-    num_known_sources = llGetListLength(known_source_keys);
-}
-
-integer known_source_key_index(string objectKey) {
+integer known_source_key_index(string source_key) {
+    integer num_known_sources = get_num_known_sources();
     if (num_known_sources == 0) {
         return -1;
     }
-    integer result = llListFindList(known_source_keys, [objectKey]);
-    return result;
+    integer i;
+    for (i = 1; i <= num_known_sources; i = i + 1) {
+        if (llLinksetDataRead(KNOWN+(string)i+KEY) == source_key) {
+            return i;
+        }
+    }
+    return -1;
 }
 string known_source_key(integer source_num) {
-    return llList2Key(known_source_keys, source_num);
+    return llLinksetDataRead(KNOWN+(string)source_num+KEY);
 }
 string known_source_name(integer source_num) {
-    return llList2String(known_source_names, source_num);
+    return llLinksetDataRead(KNOWN+(string)source_num+NAME);
 }
 integer known_source_power(integer source_num) {
-    return llList2Integer(known_source_powers, source_num);
+    return (integer)llLinksetDataRead(KNOWN+(string)source_num+POWER);
 }
 integer known_source_distance(integer source_num) {
-    return llList2Integer(known_source_distances, source_num);
+    return (integer)llLinksetDataRead(KNOWN+(string)source_num+DISTANCE);
 }
 
+list known_source_distance_index; // local to Menu
 sort_known_sources() {
     // sort the indexes list so we can present known sources in distance order
     known_source_distance_index = [];
+    integer num_known_sources = get_num_known_sources();
     integer i;
-    for (i = 0; i < num_known_sources; i = i + 1) {
+    for (i = 1; i <= num_known_sources; i = i + 1) {
         known_source_distance_index = known_source_distance_index + [i, known_source_distance(i)];
     }
     known_source_distance_index = llListSortStrided(known_source_distance_index, 2, 1, TRUE);
+    //sayDebug(DEBUG,"sort_known_sources:"+(string)known_source_distance_index);
 }
 
-integer unsort(integer i) {
+integer unsorted(integer i) {
     // given a sorted index, return the unsorted index
-    return llList2Integer(known_source_distance_index, i*2);
+    return llList2Integer(known_source_distance_index, i*2-2);
 }
 
-
+string list_known_sources() {
+    string result;
+    integer num_known_sources = get_num_known_sources();
+    result = result + "\n-----\nKnown Power Sources: capacity, distance";
+    result = result + "\nnum_known_sources:"+(string)num_known_sources;
+    result = result + "sort_known_sources:"+(string)known_source_distance_index;
+    if (num_known_sources > 0) {
+        sort_known_sources();
+        integer source_num;
+        result = result + "\nnum_known_sources:"+(string)num_known_sources;
+        for (source_num = 1; source_num <= num_known_sources; source_num = source_num + 1) {
+            integer unsorted_index = unsorted(source_num);
+            result = result + "\n" + 
+                (string)source_num + " " + (string)unsorted_index + " " + 
+                formatDebug(TRACE, "["+known_source_key(unsorted_index)+"] ")  +
+                known_source_name(unsorted_index) + ": " + 
+                EngFormat(known_source_power(unsorted_index))+", " + 
+                (string)known_source_distance(unsorted_index)+"m";
+        }
+    } else {
+        result = result + "\n" +  "No Power Sources known.";
+    }
+    return result;
+}
 
 // conected Sources
 // [key, name, capacity, rate]
@@ -121,32 +142,35 @@ integer get_num_connected_sources() {
     return (integer)llLinksetDataRead("num_connected_sources"); 
 }
 
-list connected_source_keys; 
-list connected_source_names; 
-list connected_source_capacitys; 
-list connected_source_rates; 
-integer num_connected_sources = 0; // [unsorted_index, distance]
-
-read_connected_sources() {
-    //sayDebug(DEBUG,"read_connected_sources");
-    connected_source_keys = llJson2List(llLinksetDataRead("connected_source_keys"));
-    connected_source_names = llJson2List(llLinksetDataRead("connected_source_names"));
-    connected_source_capacitys = llJson2List(llLinksetDataRead("connected_source_capacitys"));
-    connected_source_rates = llJson2List(llLinksetDataRead("connected_source_rates"));
-    num_connected_sources = llGetListLength(connected_source_keys);
-}
-
 string connected_source_key(integer source_num) {
-    return llList2Key(connected_source_keys, source_num);
+    return llLinksetDataRead(SOURCE+(string)source_num+KEY);
 }
 string connected_source_name(integer source_num) {
-    return llList2String(connected_source_names, source_num);
+    return llLinksetDataRead(SOURCE+(string)source_num+NAME);
 }
 integer connected_source_capacity(integer source_num) {
-    return llList2Integer(connected_source_capacitys, source_num);
+    return (integer)llLinksetDataRead(SOURCE+(string)source_num+CAPACITY);
 }
 integer connected_source_rate(integer source_num) {
-    return llList2Integer(connected_source_rates, source_num);
+    return (integer)llLinksetDataRead(SOURCE+(string)source_num+RATE);
+}
+
+string list_connected_sources() {
+    string result;
+    result = result + "\n-----\nConnected Power Sources: (rate/capacity)";
+    if (get_num_connected_sources() > 0) {
+        integer source_num;
+        for (source_num = 1; source_num <= get_num_connected_sources(); source_num = source_num + 1) {
+            result = result + "\n" +  
+                formatDebug(TRACE, "["+connected_source_key(source_num)+"] ")  +
+                connected_source_name(source_num) + ": " +  
+                EngFormat(connected_source_rate(source_num))+"/" + 
+                EngFormat(connected_source_capacity(source_num));
+        }
+    } else {
+        result = result + "\n" +  "No Power Sources Connected.";
+    }
+    return result;
 }
 
 // conected drains
@@ -155,40 +179,29 @@ integer get_num_connected_drains() {
     return (integer)llLinksetDataRead("num_connected_drains"); 
 }
 
-list connected_drain_keys = []; 
-list connected_drain_names = []; 
-list connected_drain_demands = []; 
-list connected_drain_rates = []; 
-integer num_connected_drains = 0;
-
-read_connected_drains() {
-    connected_drain_keys = llJson2List(llLinksetDataRead("connected_drain_keys"));
-    connected_drain_names = llJson2List(llLinksetDataRead("connected_drain_names"));
-    connected_drain_demands = llJson2List(llLinksetDataRead("connected_drain_demands"));
-    connected_drain_rates = llJson2List(llLinksetDataRead("connected_drain_rates"));
-    num_connected_drains = llGetListLength(connected_drain_keys);
-}
-
-integer drain_key_index(string objectKey) {
-    integer result;
-    if (num_connected_drains == 0) {
-        result = -1;
-    } else {
-        result = llListFindList(connected_drain_keys, [objectKey]);
+integer drain_key_index(string drain_key) {
+    if (get_num_connected_drains() == 0) {
+        return -1;
     }
-    return result;
+    integer i;
+    for (i = 1; i <= get_num_connected_drains(); i = i + 1) {
+        if (llLinksetDataRead(DRAIN+(string)i+KEY) == drain_key) {
+            return i;
+        }
+    }
+    return -1;
 }
 string connected_drain_key(integer drain_num) {
-    return llList2Key(connected_drain_keys, drain_num);
+    return llLinksetDataRead(DRAIN+(string)drain_num+KEY);
 }
 string connected_drain_name(integer drain_num) {
-    return llList2String(connected_drain_names, drain_num);
+    return llLinksetDataRead(DRAIN+(string)drain_num+NAME);
 }
 integer connected_drain_demand(integer drain_num) {
-    return llList2Integer(connected_drain_demands, drain_num);
+    return (integer)llLinksetDataRead(DRAIN+(string)drain_num+DEMAND);
 }
 integer connected_drain_rate(integer drain_num) {
-    return llList2Integer(connected_drain_rates, drain_num);
+    return (integer)llLinksetDataRead(DRAIN+(string)drain_num+RATE);
 }
 
 // ****************************************************
@@ -336,19 +349,20 @@ presentDebugLevelMenu(key whoClicked) {
 }
 
 presentConnectSourceMenu(key whoClicked) {
-    read_known_sources();
     sort_known_sources();
-    // The response must look up the original index with unsort()
+    // Sorts the index list
+    // The response must look up the original index by calling unsorted()
     string message = "Select Power Source:";
-    integer i;
     list buttons = [];
-    for (i = 0; i < num_known_sources & i < 12; i = i + 1) {
-        string item = "\n" + (string)i + ": " + known_source_name(unsort(i)) + " (" +
-            EngFormat(known_source_power(unsort(i))) + ") " + (string)known_source_distance(unsort(i)) + "m";
+    integer source_num;
+    for (source_num = 1; source_num <= get_num_known_sources() & source_num <= 12; source_num = source_num + 1) {
+        integer unsorted_index = unsorted(source_num);
+        string item = "\n" + (string)source_num + ": " + known_source_name(unsorted_index) + " (" +
+            EngFormat(known_source_power(unsorted_index)) + ") " + (string)known_source_distance(unsorted_index) + "m";
         sayDebug(TRACE, item);
         if ((llStringLength(message) + llStringLength(item)) < 512) {
             message = message + item;
-            buttons = buttons + [(string)i];
+            buttons = buttons + [(string)source_num];
         }
     }
     setUpMenu(CONNECT_SOURCE, whoClicked, message, buttons);    
@@ -358,8 +372,7 @@ presentDisonnectSourceMenu(key whoClicked) {
     string message = "Select Power Source to Disconnect:";
     integer i;
     list buttons = [];
-    read_connected_sources();
-    for (i = 0; i < get_num_connected_sources(); i = i + 1) {
+    for (i = 1; i <= get_num_connected_sources(); i = i + 1) {
         message = message + "\n" + (string)i + " " + 
             connected_source_name(i) + " " + EngFormat(connected_source_capacity(i));
         buttons = buttons + [(string)i];
@@ -371,8 +384,7 @@ presentDisonnectDrainMenu(key whoClicked) {
     string message = "Select Power Drain to Disconnect:";
     integer i;
     list buttons = [];
-    read_connected_drains();
-    for (i = 0; i < get_num_connected_drains(); i = i + 1) {
+    for (i = 1; i <= get_num_connected_drains(); i = i + 1) {
         message = message + "\n" + (string)i + " " + 
             connected_drain_name(i) + " " + EngFormat(connected_drain_demand(i));
         buttons = buttons + [(string)i];
@@ -411,52 +423,13 @@ string formatDebug(integer message_level, string message) {
     return result;
 }
 
-string list_known_sources() {
-    string result;
-    result = result + "\n-----\nKnown Power Sources: capacity, distance";
-    read_known_sources();
-    sort_known_sources();
-    if (num_known_sources > 0) {
-        integer source_num;
-        for (source_num = 0; source_num < num_known_sources; source_num = source_num + 1) {
-            result = result + "\n" +  
-                formatDebug(TRACE, "["+known_source_key(source_num)+"] ")  +
-                known_source_name(source_num) + ": " + 
-                EngFormat(known_source_power(source_num))+", " + 
-                (string)known_source_distance(source_num)+"m";
-        }
-    } else {
-        result = result + "\n" +  "No Power Sources known.";
-    }
-    return result;
-}
-
-string list_connected_sources() {
-    string result;
-    result = result + "\n-----\nConnected Power Sources: (rate/capacity)";
-    read_connected_sources();
-    if (num_connected_sources > 0) {
-        integer source_num;
-        for (source_num = 0; source_num < num_connected_sources; source_num = source_num + 1) {
-            result = result + "\n" +  
-                formatDebug(TRACE, "["+connected_source_key(source_num)+"] ")  +
-                connected_source_name(source_num) + ": " +  
-                EngFormat(connected_source_rate(source_num))+"/" + 
-                EngFormat(connected_source_capacity(source_num));
-        }
-    } else {
-        result = result + "\n" +  "No Power Sources Connected.";
-    }
-    return result;
-}
-
 report_status(string objectKey) {
     string status;
     status = status + "\n" + "Device Report for "+llGetObjectName()+":";
     status = status + list_known_sources();
     status = status + list_connected_sources();
     status = status + "\n-----\n" + "Free Memory: " + (string)llGetFreeMemory();
-    sayDebug(DEBUG, status);
+    sayDebug(INFO, status);
 }
 default
 {
@@ -467,9 +440,6 @@ default
         
         // listen to Novatech sonic screwdriver
         llListen(SONIC_CHANNEL, "", "", "ccSonic");
-
-        read_known_sources();
-        read_connected_sources();
 
         sayDebug(DEBUG, "state_entry done");
     }
@@ -492,8 +462,10 @@ default
                 report_status(objectKey);
                 llMessageLinked(LINK_SET, 0, STATUS, objectKey);
             } else if (message == RESET) {
-                sayDebug(TRACE, "listen Reset");
+                //sayDebug(DEBUG, "listen Reset sending reset message");
                 llMessageLinked(LINK_SET, 0, message, NULL_KEY);
+                llSleep(1);
+                //sayDebug(DEBUG, "listen Reset resetting Logic");
                 string otherScript = "DistributionPanelLogic "+llLinksetDataRead("LogicVersion");
                 llResetOtherScript(otherScript);
                 llSetScriptState(otherScript, TRUE);
@@ -513,9 +485,9 @@ default
                 llMessageLinked(LINK_SET, debug_level, DEBUG_LEVELS, NULL_KEY);
             } else if (menuIdentifier == CONNECT_SOURCE) {
                 sayDebug(DEBUG, "listen CONNECT_SOURCE from "+name+": "+message);
-                sayDebug(DEBUG,known_source_key((integer)message));
-                sayDebug(DEBUG,known_source_name((integer)message));
-                llRegionSayTo(known_source_key(unsort((integer)message)), POWER_CHANNEL, CONNECT+REQ);
+                //sayDebug(DEBUG,known_source_key(unsorted((integer)message);
+                //sayDebug(DEBUG,known_source_name(unsorted((integer)message);
+                llRegionSayTo(known_source_key(unsorted((integer)message)), POWER_CHANNEL, CONNECT+REQ);
             } else if (menuIdentifier == DISCONNECT_SOURCE) {
                 sayDebug(DEBUG, "listen DISCONNECT_SOURCE from "+name+": "+message);
                 key source_key = connected_source_key((integer)message);
