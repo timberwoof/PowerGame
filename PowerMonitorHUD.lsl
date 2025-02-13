@@ -1,6 +1,42 @@
+// Mechanics Power Game HUD
+// Should be able to...
+// Ping nearby sources (20m or 5m range)
+// List them in distance order
+// Choose one to listen to
+// Set its debug level (ERROR, WARN, INFO, DEBUG, TRACE)
+// Receive its debug messages
+//
+// What shodul it not do
+// Duplicate all the menu functionality of the device. 
+// The device has its own control menus 
+// 
+// Side Effects
+// Anyone in range of a device set to talk debug will receive the messages. 
+// You only hear messages if you're close enough
+//
+// Error Levels
+// ERROR - events that cause power shut down (shout)
+// WARN - situations that will cause power shut down if not fixed (shout)
+// INFO - normal operating messages: connections, disconnections (say)
+// DEBUG - messages received (whisper)
+// TRACE - nitty gritty defails (whisper)
+//
+// Device error levels
+// ERROR - only report errors
+// WARN - only report Warnings or higher
+// INFO - only report info or higher
+// DEBUG - only report debug or higher
+// TRACE - report everything
+// 
+// Can't have every device in trace mode. 
+// Trace and debug modes are remporary and 
+// they only send messages to the one who requested them. 
+//
+// Messages are only sent on the reporting channel. 
+//
+
 integer MONITOR_CHANNEL = -6546478;
 integer POWER_CHANNEL = -654647;
-integer DBEUG = TRUE;
 
 string CLOSE = "Close";
 string mainMenu = "Main";
@@ -9,6 +45,8 @@ key menuAgentKey;
 integer menuChannel;
 integer menuListen;
 integer menuTimeout;
+integer pingTimeout;
+
 
 string STATUS = "Status";
 string REQ = "-REQ";
@@ -122,20 +160,23 @@ setUpMenu(string identifier, key avatarKey, string message, list buttons)
 // message - text for top of blue menu dialog
 // buttons - list of button texts
 {
-    //sayDebug("setUpMenu "+identifier);
+    sayDebug("setUpMenu "+identifier);
     menuIdentifier = identifier;
     menuAgentKey = avatarKey; // remember who clicked
     menuChannel = -(llFloor(llFrand(10000)+1000));
     menuListen = llListen(menuChannel, "", avatarKey, "");
     menuTimeout = llFloor(llGetTime()) + 30;
+    llSetTimerEvent(2);
     llDialog(avatarKey, message, buttons, menuChannel);
 }
 
 resetMenu() {
     llListenRemove(menuListen);
+    llSetTimerEvent(0);
     menuListen = 0;
     menuChannel = 0;
     menuAgentKey = "";
+    menuTimeout = 0;
 }
 
 presentMainMenu(key whoClicked) {
@@ -144,6 +185,7 @@ presentMainMenu(key whoClicked) {
     buttons = buttons + STATUS;
     buttons = buttons + PING; 
     buttons = buttons + RESET; // *** might not be a good idea
+    buttons = buttons + menuCheckbox(DEBUG, debug_state);
     setUpMenu(mainMenu, whoClicked, message, buttons);
 }
 
@@ -196,41 +238,45 @@ presentConnectSourceMenu(key whoClicked) {
 }
 
 send_ping_req() {
-    sayDebug ("ping_req");
+    sayDebug("send_ping_req");
     num_known_sources = 0;
     known_sources = [];
     known_sources_are_sorted = FALSE;
     llShout(POWER_CHANNEL, PING+REQ);
+    llSetTimerEvent(2);
 }
 
 add_known_source(string source_name, key source_key, integer source_power) {
     // respond to Ping-ACK
-    sayDebug ("add_known_source:"+source_name);
+    sayDebug("add_known_source");
     vector myPos = llGetPos();
     list source_details = llGetObjectDetails(source_key, [OBJECT_POS]);    
     vector source_position = llList2Vector(source_details, 0);
     integer source_distance = llFloor(llVecDist(myPos, source_position));
-    // [key, name, power, distance]
     known_sources = known_sources + [source_key, source_name, source_power, source_distance]; 
     num_known_sources = num_known_sources + 1;
+    pingTimeout = llFloor(llGetTime()) + 1;
 }
 
 
 string list_known_sources() {
-    // [key, name, power, distance]
     string result;
-    result = result + "\n-----\nKnown Power Sources:";
-    integer i;
+    result = result + "\nNearest Known Power Sources: capacity, distance";
     if (num_known_sources > 0) {
-        for (i = 0; i < num_known_sources; i = i + 1) {
-            result = result + "\n" +   known_source_name(i) + ": " + EngFormat(known_source_power(i));
+        integer source_num;
+        for (source_num = 1; 
+            (source_num <= num_known_sources) & (source_num <= 20); 
+            source_num = source_num + 1) {
+            result = result + "\n" + 
+                known_source_name(source_num) + ": " +  
+                EngFormat(known_source_power(source_num))+", " + 
+                (string)known_source_distance(source_num)+"m";
         }
     } else {
-        result = result + "\n" +  "No Power Sources Known.";
+        result = result + "\n" +  "No Power Sources known. Issue a Ping.";
     }
     return result;
 }
-
 
 
 report_status() {
@@ -246,19 +292,21 @@ default
         sayDebug("state_entry");
         llListen(MONITOR_CHANNEL, "", NULL_KEY, "");
         llListen(POWER_CHANNEL, "", NULL_KEY, "");
-        llSetTimerEvent(10);
+        menuTimeout = 0;
+        pingTimeout = 0;
     }
 
     touch_start(integer total_number)
     {
-        //sayDebug("touch_start");
+        sayDebug("touch_start");
         key whoClicked  = llDetectedKey(0);
         presentMainMenu(whoClicked);
     }
     
-    listen( integer channel, string name, key objectKey, string message )
+    listen(integer channel, string name, key objectKey, string message)
     {
         if (channel == menuChannel) {
+            sayDebug("listen menuChannel \""+name+"\" says \""+message+"\"");
             resetMenu();
             if (message == STATUS) {
                 report_status();
@@ -275,6 +323,7 @@ default
                 sayDebug("listen did not handle "+menuIdentifier+":"+message);
             }
         } else if (channel == POWER_CHANNEL) {
+            sayDebug("listen power_channel \""+name+"\" says \""+message+"\"");
             string trimmed_message = trimMessageParameters(message);
             integer parameter = getMessageParameter(message);
             if (trimmed_message == PING+ACK) {
@@ -287,8 +336,14 @@ default
 
     timer() {
         integer now = llFloor(llGetTime());
-        if (now > menuTimeout) {
+        if ((menuTimeout > 0) & now >= menuTimeout) {
             resetMenu();
+        }
+        if ((pingTimeout > 0) & (now >= pingTimeout)) {
+            known_sources = llListSortStrided(known_sources, 4, 3, TRUE);
+            list_known_sources();
+            pingTimeout = 0;
+            llSetTimerEvent(0);
         }
     }
 }
