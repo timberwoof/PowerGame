@@ -28,9 +28,8 @@ integer known_sources_are_sorted = FALSE;
 
 key my_source_key;
 string my_source_name;
-integer my_source_power;
 integer connected;
-integer power_state;
+integer power_switch_state;
 
 integer dialog_channel;
 integer dialog_listen;
@@ -47,9 +46,16 @@ integer menuTimeout;
 integer debug_state = FALSE;
 sayDebug(string message) {
     if (debug_state) {
-        llSay(0,message);
+        llSay(0,"Logic "+message);
     }
 }
+
+toggle_debug_state() {
+    debug_state = !debug_state;
+    llLinksetDataWrite("debug_state", (string)debug_state);
+    llMessageLinked(LINK_SET, debug_state, "Debug", NULL_KEY);
+}
+
 
 string EngFormat(integer quantity) {
 // present quantity in engineering notaiton with prefix
@@ -172,7 +178,7 @@ presentMainMenu(key whoClicked) {
     buttons = buttons + PING; 
     buttons = buttons + menuButtonActive(CONNECT_SOURCE, num_known_sources > 0);
     buttons = buttons + menuButtonActive(DISCONNECT_SOURCE, connected);
-    buttons = buttons + menuButtonActive(menuCheckbox("Power", power_state), num_known_sources > 0);
+    buttons = buttons + menuButtonActive(menuCheckbox("Power", power_switch_state), num_known_sources > 0);
     buttons = buttons + RESET;
     buttons = buttons + menuCheckbox(DEBUG, debug_state);
     setUpMenu(mainMenu, whoClicked, message, buttons);
@@ -239,6 +245,7 @@ presentConnectSourceMenu(key whoClicked) {
 
 
 string power_state_to_string(integer power_state) {
+    sayDebug("power_state_to_string("+(string)power_state+")");
     if (power_state) {
         return "On";
     } else {
@@ -247,28 +254,33 @@ string power_state_to_string(integer power_state) {
 }
 
 report_status() {
-    llSay(0, "Power: " + power_state_to_string(power_state) + ". " +
+    llSay(0, "Power: " + power_state_to_string(power_switch_state) + ". " +
             "Consuming " + (string)power_draw + " watts " +
             "from power source " + my_source_name + ".");
 }
 
 set_power(integer new_power_state) {
-    power_state = new_power_state;
-    if (power_state) {
+    sayDebug("set_power("+(string)new_power_state+")");
+    power_switch_state = new_power_state;
+    if (power_switch_state) {
         llRegionSayTo(my_source_key, POWER_CHANNEL, POWER+REQ+"["+(string)power_ask+"]");
+        llMessageLinked(LINK_SET, power_draw, "Power", NULL_KEY);
     } else {
         llRegionSayTo(my_source_key, POWER_CHANNEL, POWER+REQ+"[0]");
+        llMessageLinked(LINK_SET, 0, "Power", NULL_KEY);
     }
 }
 
 toggle_power() {
-    set_power(!power_state);
+    sayDebug("toggle_power()");
+    set_power(!power_switch_state);
 }
 
 default
 {
     state_entry()
     {
+        debug_state = (integer)llLinksetDataRead("debug_state");
         sayDebug("state_entry");
         llSetTimerEvent(1);
         llListen(POWER_CHANNEL, "", NULL_KEY, "");
@@ -288,10 +300,9 @@ default
     }
     
     listen(integer channel, string name, key objectKey, string message )
-    {
-        sayDebug("listen name:"+name+" message:"+message);
-        
+    {        
         if (channel == menuChannel) {
+            sayDebug("listen menuChannel name:"+name+" message:"+message);
             resetMenu();
             if (message == CLOSE) {
                 sayDebug("listen Close");
@@ -312,13 +323,12 @@ default
             } else if (trimMessageButton(message) == POWER) {
                 toggle_power();
             } else if (trimMessageButton(message) == DEBUG) {
-                debug_state = !debug_state;
-            } else if (trimMessageButton(message) == DEBUG) {
-                debug_state = !debug_state;
+                toggle_debug_state();
             } else {
                 sayDebug("listen did not handle "+menuIdentifier+":"+message);
             }
         } else if (channel == POWER_CHANNEL) {
+            sayDebug("listen powerChannel name:"+name+" message:"+message);
             string trimmed_message = trimMessageParameters(message);
             integer parameter = getMessageParameter(message);
             if (trimmed_message == PING+ACK) {
@@ -327,7 +337,6 @@ default
                 my_source_key = objectKey;
                 my_source_name = name;
                 connected = TRUE;
-                set_power(power_state); // does this even make sense?
             } else if (trimmed_message == DISCONNECT+ACK) {
                 my_source_key = NULL_KEY;
                 my_source_name = NONE;
@@ -335,9 +344,13 @@ default
                 set_power(OFF);
             } else if (trimmed_message == POWER+ACK) {
                 power_draw = getMessageParameter(message);
-                power_state = (connected & (power_draw == power_ask));
-                llMessageLinked(LINK_SET, power_draw, "Power", NULL_KEY);
-                sayDebug("listen "+message+" "+(string)power_draw+" results in  power state:"+(string)power_state);
+                if (connected & power_switch_state) {
+                    sayDebug("POWER-ACK sets power_draw to "+(string)power_draw);
+                    llMessageLinked(LINK_SET, power_draw, "Power", NULL_KEY);
+                } else {
+                    sayDebug("POWER-ACK not connected or off");
+                    llMessageLinked(LINK_SET, 0, "Power", NULL_KEY);
+                }
             }
         }
     }
