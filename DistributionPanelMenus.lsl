@@ -2,7 +2,9 @@
 // Menu and Message Utilities
 // This is all about communicting with the user.
 
-string menuVersion = "2025-02-03 2";
+string logicScriptName;
+string logicVersion;
+string menuVersion;
 string debug_string = "Info";
 
 // constants
@@ -60,7 +62,7 @@ setDebugLevelByNumber(integer new_debug_level) {
     sayDebug(TRACE,"setDebugLevelByNumber debug_level:"+debug_level_name);
 }
 
-integer power_state;
+integer power_switch_state;
 
 // Known Sources
 integer get_num_known_sources() {
@@ -323,7 +325,7 @@ resetMenu() {
 
 presentMainMenu(key whoClicked) {
     string message = "Power Panel Main Menu \n" +
-        "Logic Version " + llLinksetDataRead("LogicVersion") + "\n" +
+        "Logic Version " + logicVersion + "\n" +
         "Menu Version " + menuVersion;
     list buttons = [];
     buttons = buttons + STATUS;
@@ -332,7 +334,7 @@ presentMainMenu(key whoClicked) {
     buttons = buttons + menuButtonActive(CONNECT_SOURCE, get_num_known_sources() > 0);
     buttons = buttons + menuButtonActive(DISCONNECT_SOURCE, get_num_connected_sources() > 0);
     buttons = buttons + menuButtonActive(DISCONNECT_DRAIN, get_num_connected_drains() > 0); 
-    buttons = buttons + menuCheckbox("Power", power_state);
+    buttons = buttons + menuCheckbox("Power", power_switch_state);
     buttons = buttons + DEBUG_LEVELS;
     setUpMenu(mainMenu, whoClicked, message, buttons);
 }
@@ -429,14 +431,22 @@ report_status(string objectKey) {
     status = status + list_known_sources();
     status = status + list_connected_sources();
     status = status + "\n-----\n" + "Free Memory: " + (string)llGetFreeMemory();
-    sayDebug(INFO, status);
+    sayDebug(DEBUG, status);
 }
 default
 {
     state_entry()
     {
         sayDebug(DEBUG, "state_entry");
-        setDebugLevelByName(debug_string);
+        debug_level = (integer)llLinksetDataRead(DEBUG_LEVELS);
+        setDebugLevelByNumber(debug_level);
+
+        // DistributionPanelLogic 2025-02-09
+        logicScriptName = llLinksetDataRead("logicScriptName");
+        logicVersion = llGetSubString(logicScriptName, -10, -1);
+        menuVersion = llGetSubString(llGetScriptName(), -10, -1);
+
+        power_switch_state = (integer)llLinksetDataRead("power_switch_state");
         
         // listen to Novatech sonic screwdriver
         llListen(SONIC_CHANNEL, "", "", "ccSonic");
@@ -466,9 +476,8 @@ default
                 llMessageLinked(LINK_SET, 0, message, NULL_KEY);
                 llSleep(1);
                 //sayDebug(DEBUG, "listen Reset resetting Logic");
-                string otherScript = "DistributionPanelLogic "+llLinksetDataRead("LogicVersion");
-                llResetOtherScript(otherScript);
-                llSetScriptState(otherScript, TRUE);
+                llResetOtherScript(logicScriptName);
+                llSetScriptState(logicScriptName, TRUE);
                 llResetScript();
             } else if (message == DEBUG_LEVELS) {
                 presentDebugLevelMenu(objectKey);
@@ -482,6 +491,7 @@ default
                 presentDisonnectDrainMenu(objectKey);
             } else if (menuIdentifier == DEBUG_LEVELS) {
                 setDebugLevelByName(trimMessageButton(message));
+                llLinksetDataWrite(DEBUG_LEVELS, (string)debug_level);
                 llMessageLinked(LINK_SET, debug_level, DEBUG_LEVELS, NULL_KEY);
             } else if (menuIdentifier == CONNECT_SOURCE) {
                 sayDebug(DEBUG, "listen CONNECT_SOURCE from "+name+": "+message);
@@ -499,8 +509,8 @@ default
                 llRegionSayTo(drain_key, POWER_CHANNEL, DISCONNECT+REQ);
                 llMessageLinked(LINK_SET, (integer)message, DISCONNECT+REQ, drain_key);
             } else if (trimMessageButton(message) == POWER) {
-                power_state = !power_state;
-                llMessageLinked(LINK_SET, power_state, POWER, NULL_KEY);
+                power_switch_state = !power_switch_state;
+                llMessageLinked(LINK_SET, power_switch_state, POWER, NULL_KEY);
             } else if (message == "OK") {
                 // OK
             } else {
@@ -509,8 +519,8 @@ default
         } else if (channel == SONIC_CHANNEL) {
             // If we get any message from a Novatech Sonic Sc rewdriver, toggle the power
             llRegionSayTo(objectKey, SONIC_CHANNEL, "ccSonicOK");
-            power_state = !power_state;
-            llMessageLinked(LINK_SET, power_state, POWER, NULL_KEY);
+            power_switch_state = !power_switch_state;
+            llMessageLinked(LINK_SET, power_switch_state, POWER, NULL_KEY);
             llMessageLinked(LINK_SET, 0, STATUS, objectKey);
         }
     }
