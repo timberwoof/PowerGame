@@ -2,9 +2,10 @@
 // Incremental build-up of Lamp Power Logicl 
 
 integer POWER_CHANNEL = -654647;
+integer MONITOR_CHANNEL = -6546478;
 integer clock_interval = 1;
-integer power_ask = 100;
-integer power_draw = 0;
+integer powerAsk = 100;
+integer powerAck = 0;
 
 string REQ = "-REQ";
 string ACK = "-ACK";
@@ -12,13 +13,26 @@ string PING = "Ping";
 string STATUS = "Status";
 string CONNECT = "Connect";
 string DISCONNECT = "Disconnect";
-string CONNECT_SOURCE = "Connect Src";
-string DISCONNECT_SOURCE = "Disc Src";
-string DISCONNECT_DRAIN = "Disc Drain";
+string SOURCE = "Source"; // power source
 string POWER = "Power";
 string RESET = "Reset";
 string NONE = "None";
 string DEBUG = "Debug";
+
+string CEILING = "Ceiling";
+string INTERIOR = "Interior";
+string LOCKDOWN = "Lockdown";
+string MARKER = "Marker";
+string POINT = "Point"; // light source
+string SENSOR = "Sensor";
+
+integer OPTION_CEILING = 0;
+integer OPTION_INTERIOR = -1;
+integer OPTION_LOCKDOWN = 0;
+integer OPTION_MARKER = -1;
+integer OPTION_POINT = 0;
+integer OPTION_SENSOR = 0;
+
 integer ON = TRUE;
 integer OFF = FALSE;
 
@@ -43,19 +57,44 @@ integer menuChannel;
 integer menuListen;
 integer menuTimeout;
 
-integer debug_state = FALSE;
+string LinksetDataRead(string symbol) {
+    symbol = (string)llGetLinkNumber()+symbol;
+    return llLinksetDataRead(symbol);
+}
+
+LinksetDataWrite(string symbol, string value) {
+    symbol = (string)llGetLinkNumber()+symbol;
+    llLinksetDataWrite(symbol, value);
+}
+
+integer OPTION_DEBUG = FALSE;
 sayDebug(string message) {
-    if (debug_state) {
-        llSay(0,"Logic "+message);
+    if (OPTION_DEBUG) {
+        llSay(MONITOR_CHANNEL,"Logic "+message);
     }
 }
 
 toggle_debug_state() {
-    debug_state = !debug_state;
-    llLinksetDataWrite("debug_state", (string)debug_state);
-    llMessageLinked(LINK_SET, debug_state, "Debug", NULL_KEY);
+    OPTION_DEBUG = !OPTION_DEBUG;
+    LinksetDataWrite(DEBUG, (string)OPTION_DEBUG);
+    llMessageLinked(LINK_THIS, OPTION_DEBUG, DEBUG, NULL_KEY);
 }
 
+integer agentIsInGroup(key agent, key groupKey)
+{
+    list attachList = llGetAttachedList(agent);
+    integer item;
+    while(item < llGetListLength(attachList))
+    {
+        if(llList2Key(llGetObjectDetails(llList2Key(attachList, item), [OBJECT_GROUP]), 0) == groupKey) {
+            sayDebug("agentIsInGroup passed group check");
+            return TRUE;
+        }
+        item++;
+    }
+    llSay(0, "warning: agentIsInGroup failed group check");
+    return FALSE;
+}
 
 string EngFormat(integer quantity) {
 // present quantity in engineering notaiton with prefix
@@ -128,6 +167,19 @@ list menuButtonActive(string title, integer onOff)
     return [button];
 }
 
+list menuButtonTriState(string title, integer onOff)
+// if onOff = -1, the option is not avaialble. 
+// otherwise, treat it as normal onoff. 
+{
+    list buttons;
+    if (onOff < 0) {
+        buttons = menuButtonActive(title, OFF);
+    } else {
+        buttons = [menuCheckbox(title, onOff)];
+    }
+    return buttons;
+}
+
 string trimMessageButton(string message) {
     string messageButtonsTrimmed = message;
     list striplist = ["☒ ","☐ ","● ","○ "];
@@ -155,7 +207,7 @@ setUpMenu(string identifier, key avatarKey, string message, list buttons)
 // message - text for top of blue menu dialog
 // buttons - list of button texts
 {
-    sayDebug("setUpMenu "+identifier);    
+    //sayDebug("setUpMenu "+identifier);    
     menuIdentifier = identifier;
     menuAgentKey = avatarKey; // remember who clicked
     menuChannel = -(llFloor(llFrand(10000)+1000));
@@ -176,11 +228,16 @@ presentMainMenu(key whoClicked) {
     list buttons = [];
     buttons = buttons + STATUS;
     buttons = buttons + PING; 
-    buttons = buttons + menuButtonActive(CONNECT_SOURCE, num_known_sources > 0);
-    buttons = buttons + menuButtonActive(DISCONNECT_SOURCE, connected);
+    buttons = buttons + menuCheckbox(SOURCE, connected);
     buttons = buttons + menuButtonActive(menuCheckbox("Power", power_switch_state), num_known_sources > 0);
     buttons = buttons + RESET;
-    buttons = buttons + menuCheckbox(DEBUG, debug_state);
+    buttons = buttons + menuCheckbox(DEBUG, OPTION_DEBUG);
+    buttons = buttons + menuButtonTriState(MARKER, OPTION_MARKER);
+    buttons = buttons + menuButtonTriState(INTERIOR, OPTION_INTERIOR);
+    buttons = buttons + menuCheckbox(POINT, OPTION_POINT);
+    buttons = buttons + menuCheckbox(CEILING, OPTION_CEILING);
+    buttons = buttons + menuCheckbox(LOCKDOWN, OPTION_LOCKDOWN);
+    buttons = buttons + menuCheckbox(SENSOR, OPTION_SENSOR);
     setUpMenu(mainMenu, whoClicked, message, buttons);
 }
 
@@ -210,7 +267,7 @@ send_ping_req() {
 
 add_known_source(string source_name, key source_key, integer source_power) {
     // respond to Ping-ACK
-    sayDebug ("add_known_source("+source_name+") "+EngFormat(source_power));
+    //sayDebug ("add_known_source("+source_name+") "+EngFormat(source_power));
     vector myPos = llGetPos();
     list source_details = llGetObjectDetails(source_key, [OBJECT_POS]);    
     vector source_position = llList2Vector(source_details, 0);
@@ -221,6 +278,7 @@ add_known_source(string source_name, key source_key, integer source_power) {
 }
 
 presentConnectSourceMenu(key whoClicked) {
+    sayDebug("presentConnectSourceMenu");
     // sort by distance, nearest first
     if (!known_sources_are_sorted) {
         known_sources = llListSortStrided(known_sources, 4, 3, TRUE);
@@ -234,13 +292,12 @@ presentConnectSourceMenu(key whoClicked) {
     for (i = 0; i < num_known_sources & i < 12; i = i + 1) {
         /// [key, name, power, distance]
         string item = "\n" + (string)i + ": " + known_source_name(i) + " (" + EngFormat(known_source_power(i)) + ") " + (string)known_source_distance(i) + "m";
-        sayDebug(item);
         if ((llStringLength(message) + llStringLength(item)) < 512) {
             message = message + item;
             buttons = buttons + [(string)i];
         }
     }
-    setUpMenu(CONNECT_SOURCE, whoClicked, message, buttons);    
+    setUpMenu(SOURCE, whoClicked, message, buttons);    
 }
 
 
@@ -254,49 +311,113 @@ string power_state_to_string(integer power_state) {
 }
 
 report_status() {
-    llSay(0, "Power: " + power_state_to_string(power_switch_state) + ". " +
-            "Consuming " + (string)power_draw + " watts " +
-            "from power source " + my_source_name + ".");
+    string status = "Lamp Logic Status\n" +
+        "Power source: " + my_source_name + "\n" +
+        "Power: " + power_state_to_string(power_switch_state) + "\n" +
+        "Requested " + (string)powerAsk + " watts \n" +
+        "Drawing " + (string)powerAck + " watts";
+    llSay(MONITOR_CHANNEL, status);
 }
 
 set_power(integer new_power_state) {
-    sayDebug("set_power("+(string)new_power_state+")");
+    // called by toggle_power/
+    // sends power switch state to the lamp, 
+    // which calls back with a power ask
     power_switch_state = new_power_state;
-    if (power_switch_state) {
-        llRegionSayTo(my_source_key, POWER_CHANNEL, POWER+REQ+"["+(string)power_ask+"]");
-        llMessageLinked(LINK_SET, power_draw, "Power", NULL_KEY);
-    } else {
-        llRegionSayTo(my_source_key, POWER_CHANNEL, POWER+REQ+"[0]");
-        llMessageLinked(LINK_SET, 0, "Power", NULL_KEY);
-    }
+    sayDebug("set_power llMessageLinked powerSwitch:"+(string)power_switch_state);
+    llMessageLinked(LINK_THIS, power_switch_state, "powerSwitch", NULL_KEY);
 }
 
 toggle_power() {
+    // Called by menu handler
     sayDebug("toggle_power()");
     set_power(!power_switch_state);
+}
+
+toggle_source(string name, key objectKey, string message) {
+    sayDebug("toggle_source "+message+" connected:"+(string)connected);
+    if (connected) {
+        sayDebug("toggle_source "+DISCONNECT+REQ);
+        llRegionSayTo(my_source_key, POWER_CHANNEL, DISCONNECT+REQ);
+        LinksetDataWrite("my_source_key","");
+        LinksetDataWrite("my_source_name",NONE);
+    } else {
+        sayDebug("toggle_source CONNECT");
+        presentConnectSourceMenu(objectKey);
+    }
 }
 
 default
 {
     state_entry()
     {
-        debug_state = (integer)llLinksetDataRead("debug_state");
+        OPTION_DEBUG = (integer)LinksetDataRead(DEBUG);
         sayDebug("state_entry");
+        OPTION_POINT = (integer)LinksetDataRead(POINT);        
+        OPTION_CEILING = (integer)LinksetDataRead(CEILING);
+        OPTION_LOCKDOWN = (integer)LinksetDataRead(LOCKDOWN);
+        OPTION_MARKER = (integer)LinksetDataRead(MARKER);
+        OPTION_INTERIOR = (integer)LinksetDataRead(INTERIOR);
+        OPTION_SENSOR = (integer)LinksetDataRead(SENSOR);
+        my_source_key = LinksetDataRead("my_source_key");
+        my_source_name = LinksetDataRead("my_source_name");
+        sayDebug("state_entry my_source_name:\""+my_source_name+"\"");
         llSetTimerEvent(1);
         llListen(POWER_CHANNEL, "", NULL_KEY, "");
-        my_source_key = NULL_KEY;
-        my_source_name = NONE;
-        set_power(OFF);
-        connected = FALSE;
-        llMessageLinked(LINK_SET, power_draw, "Power", NULL_KEY);
+        powerAck = 0;
+        powerAsk = 0;
+        if (my_source_key) {
+            connected = TRUE;
+        } else {
+            connected = FALSE;
+        }
+        sayDebug("state_entry llMessageLinked powerAck:"+(string)powerAck);
+        llMessageLinked(LINK_THIS, powerAck, "powerAck", NULL_KEY);
         send_ping_req();
+        report_status();
+        sayDebug("state_entry done");
     }
 
     touch_start(integer total_number)
     {
-        sayDebug("touch_start");
-        key whoClicked  = llDetectedKey(0);
-        presentMainMenu(whoClicked);
+        //sayDebug("touch_start");
+        key whoClicked = llDetectedKey(0);
+        key allowed = "b3947eb2-4151-bd6d-8c63-da967677bc69"; // guards
+        if (agentIsInGroup(whoClicked, allowed)) {
+            presentMainMenu(whoClicked);
+        } else {
+            llSay(-106969,(string)whoClicked);
+            llRegionSayTo(whoClicked, POWER_CHANNEL, "Zap-REQ[2]");
+        }
+    }
+    
+    link_message(integer sender_num, integer num, string msg, key id) {
+        //sayDebug("link_message("+msg+", "+(string)num+")");
+        if (id == NULL_KEY) {
+            return;
+        } else if (msg == "Ask") {
+            powerAsk = num;
+            string message = POWER+REQ+"["+(string)powerAsk+"]";
+            sayDebug("link_message sends \""+message+ "\" to "+my_source_name);
+            llRegionSayTo(my_source_key, POWER_CHANNEL, message);
+        } else if ((msg == "Debug") | (msg == "powerSwitch") | (msg == "powerAck") | (msg == "Status")) {
+            // ignore as we send these 
+        } else if (msg == CEILING) {
+            OPTION_CEILING = num;
+        } else if (msg == INTERIOR) {
+            OPTION_INTERIOR = num;
+        } else if (msg == MARKER) {
+            OPTION_MARKER = num;
+        } else if (msg == LOCKDOWN) {
+            OPTION_LOCKDOWN = num;
+        } else if (msg == POINT) {
+            OPTION_POINT = num;
+        } else if (msg == SENSOR) {
+            OPTION_SENSOR = num;
+        } else {
+            sayDebug("error: link_message did not handle msg:"+msg+" "+(string)num);
+        }
+        //sayDebug("link_message done");
     }
     
     listen(integer channel, string name, key objectKey, string message )
@@ -308,49 +429,85 @@ default
                 sayDebug("listen Close");
             } else if (message == STATUS) {
                 report_status();
+                llMessageLinked(LINK_THIS, 0, "Status", NULL_KEY);
             } else if (message == RESET) {
+                llMessageLinked(LINK_THIS, 0, "Reset", NULL_KEY);
+                llSleep(1);
                 llResetScript();
             } else if (message == PING) {
                 send_ping_req();
-            } else if (message == CONNECT_SOURCE) {
-                presentConnectSourceMenu(objectKey);
-            } else if (message == DISCONNECT_SOURCE) {
-                sayDebug("listen DISCONNECT from "+name+": "+message);
-                llRegionSayTo(my_source_key, POWER_CHANNEL, DISCONNECT+REQ);
-            } else if (menuIdentifier == CONNECT_SOURCE) {
+            } else if (trimMessageButton(message) == SOURCE) {
+                toggle_source(name, objectKey, message);
+            } else if (menuIdentifier == SOURCE) {
                 sayDebug("listen CONNECT from "+name+": "+message);
                 llRegionSayTo(known_source_key((integer)message), POWER_CHANNEL, CONNECT+REQ);
             } else if (trimMessageButton(message) == POWER) {
                 toggle_power();
             } else if (trimMessageButton(message) == DEBUG) {
                 toggle_debug_state();
+            } else if (trimMessageButton(message) == LOCKDOWN) {
+                OPTION_LOCKDOWN = !OPTION_LOCKDOWN;
+                llMessageLinked(LINK_THIS, OPTION_LOCKDOWN, LOCKDOWN, NULL_KEY);
+            } else if (trimMessageButton(message) == SENSOR) {
+                OPTION_SENSOR = !OPTION_SENSOR;
+                llMessageLinked(LINK_THIS, OPTION_SENSOR, SENSOR, NULL_KEY);
+            } else if (trimMessageButton(message) == INTERIOR) {
+                OPTION_INTERIOR = !OPTION_INTERIOR;
+                llMessageLinked(LINK_THIS, OPTION_INTERIOR, INTERIOR, NULL_KEY);
+                if (OPTION_MARKER) {
+                    OPTION_MARKER = OFF;
+                    sayDebug("listen menuChannel INTERIOR");
+                    llMessageLinked(LINK_THIS, OPTION_MARKER, MARKER, NULL_KEY);
+                }
+            } else if (trimMessageButton(message) == MARKER) {
+                OPTION_MARKER = !OPTION_MARKER;
+                sayDebug("listen menuChannel MARKER");
+                llMessageLinked(LINK_THIS, OPTION_MARKER, MARKER, NULL_KEY);
+                if (OPTION_INTERIOR) {
+                    OPTION_INTERIOR = OFF;
+                    llMessageLinked(LINK_THIS, OPTION_INTERIOR, INTERIOR, NULL_KEY);
+                }
+            } else if (trimMessageButton(message) == POINT) {
+                OPTION_POINT = !OPTION_POINT;
+                llMessageLinked(LINK_THIS, OPTION_POINT, POINT, NULL_KEY);
+            } else if (trimMessageButton(message) == CEILING) {
+                OPTION_CEILING = !OPTION_CEILING;
+                llMessageLinked(LINK_THIS, OPTION_CEILING, CEILING, NULL_KEY);
             } else {
                 sayDebug("listen did not handle "+menuIdentifier+":"+message);
             }
         } else if (channel == POWER_CHANNEL) {
-            sayDebug("listen powerChannel name:"+name+" message:"+message);
             string trimmed_message = trimMessageParameters(message);
             integer parameter = getMessageParameter(message);
             if (trimmed_message == PING+ACK) {
                 add_known_source(name, objectKey, parameter);
             } else if (trimmed_message == CONNECT+ACK) {
+                sayDebug("listen powerChannel name:"+name+" message:"+message);
                 my_source_key = objectKey;
                 my_source_name = name;
+                LinksetDataWrite("my_source_key", my_source_key);
+                LinksetDataWrite("my_source_name", my_source_name);
                 connected = TRUE;
             } else if (trimmed_message == DISCONNECT+ACK) {
+                sayDebug("listen powerChannel name:"+name+" message:"+message);
                 my_source_key = NULL_KEY;
                 my_source_name = NONE;
+                LinksetDataWrite("my_source_key", "");
+                LinksetDataWrite("my_source_name", NONE);
                 connected = FALSE;
                 set_power(OFF);
             } else if (trimmed_message == POWER+ACK) {
-                power_draw = getMessageParameter(message);
-                if (connected & power_switch_state) {
-                    sayDebug("POWER-ACK sets power_draw to "+(string)power_draw);
-                    llMessageLinked(LINK_SET, power_draw, "Power", NULL_KEY);
+                sayDebug("listen powerChannel name:"+name+" message:"+message);
+                powerAck = getMessageParameter(message);
+                if (connected) {
+                    sayDebug("listen POWER-ACK sets powerAck to "+(string)powerAck);
+                    llMessageLinked(LINK_THIS, powerAck, "powerAck", NULL_KEY);
                 } else {
-                    sayDebug("POWER-ACK not connected or off");
-                    llMessageLinked(LINK_SET, 0, "Power", NULL_KEY);
+                    sayDebug("listen POWER-ACK not connected");
+                    llMessageLinked(LINK_THIS, 0, "powerAck", NULL_KEY);
                 }
+            } else {
+                sayDebug("listen ignored \""+message+"\"");
             }
         }
     }
