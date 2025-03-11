@@ -2,14 +2,13 @@
 // Menu and Message Utilities
 // This is all about communicting with the user.
 
-string logicScriptName;
-string logicVersion;
-string menuVersion;
 string debug_string = "Info";
 
 // constants
 integer MONITOR_CHANNEL = -6546478;
 integer POWER_CHANNEL = -654647;
+integer ZapChannel = -106969;
+string ZAPREQ = "Zap-REQ";
 
 // interface to Novatech Sonic Screwdriver
 integer SONIC_CHANNEL = -313331;    // Used by sonic screwdrivers. Do not change!
@@ -24,6 +23,9 @@ string CAPACITY = "Capacity";
 string DEMAND = "Demand";
 string RATE = "Rate";
 
+string dataScriptName = "DistributionPanelData";
+string logicScriptName = "DistributionPanelLogic";
+
 // *********************************
 // Debug system
 // Higher numbers are lower priority.
@@ -33,10 +35,10 @@ integer INFO = 2;
 integer DEBUG = 3;
 integer TRACE = 4;
 string DEBUG_LEVELS = "DebugLevels";
-list debug_levels = ["Error", "Warming", "Info", "Debug", "Trace"];
+list debug_levels = ["Error", "Warning", "Info", "Debug", "Trace"];
 integer debug_level = 0;
 sayDebug(integer message_level, string message) {
-    message = "Menus "+llList2String(debug_levels, message_level) + ": " + message;
+    message = "MENU "+llList2String(debug_levels, message_level) + ": " + message;
     if (message_level <= debug_level) {
         if (message_level <= WARN) {
             // warnings and errors on local chat and on Power Monitor HUD
@@ -64,7 +66,23 @@ setDebugLevelByNumber(integer new_debug_level) {
 
 integer power_switch_state;
 
-// Known Sources
+integer agentIsInGroup(key agent, key groupKey)
+{
+    list attachList = llGetAttachedList(agent);
+    integer item;
+    while(item < llGetListLength(attachList))
+    {
+        if(llList2Key(llGetObjectDetails(llList2Key(attachList, item), [OBJECT_GROUP]), 0) == groupKey) {
+            sayDebug(TRACE, "agentIsInGroup passed group check");
+            return TRUE;
+        }
+        item++;
+    }
+    sayDebug(WARN, "agentIsInGroup failed group check");
+    return FALSE;
+}
+
+// Known Sources - needed to present "connect source" menu
 integer get_num_known_sources() {
     return (integer)llLinksetDataRead("num_known_sources"); 
 }
@@ -113,35 +131,10 @@ integer unsorted(integer i) {
     return llList2Integer(known_source_distance_index, i*2-2);
 }
 
-string list_known_sources() {
-    string result;
-    integer num_known_sources = get_num_known_sources();
-    result = result + "\n-----\nKnown Power Sources: capacity, distance";
-    result = result + "\nnum_known_sources:"+(string)num_known_sources;
-    result = result + "sort_known_sources:"+(string)known_source_distance_index;
-    if (num_known_sources > 0) {
-        sort_known_sources();
-        integer source_num;
-        result = result + "\nnum_known_sources:"+(string)num_known_sources;
-        for (source_num = 1; source_num <= num_known_sources; source_num = source_num + 1) {
-            integer unsorted_index = unsorted(source_num);
-            result = result + "\n" + 
-                (string)source_num + " " + (string)unsorted_index + " " + 
-                formatDebug(TRACE, "["+known_source_key(unsorted_index)+"] ")  +
-                known_source_name(unsorted_index) + ": " + 
-                EngFormat(known_source_power(unsorted_index))+", " + 
-                (string)known_source_distance(unsorted_index)+"m";
-        }
-    } else {
-        result = result + "\n" +  "No Power Sources known.";
-    }
-    return result;
-}
-
-// conected Sources
+// conected Sources - Needed for "Connect Source" and "Disconnect Source" menu. 
 // [key, name, capacity, rate]
-integer get_num_connected_sources() {
-    return (integer)llLinksetDataRead("num_connected_sources"); 
+integer get_num_sources() {
+    return (integer)llLinksetDataRead("num_sources"); 
 }
 
 string connected_source_key(integer source_num) {
@@ -157,36 +150,18 @@ integer connected_source_rate(integer source_num) {
     return (integer)llLinksetDataRead(SOURCE+(string)source_num+RATE);
 }
 
-string list_connected_sources() {
-    string result;
-    result = result + "\n-----\nConnected Power Sources: (rate/capacity)";
-    if (get_num_connected_sources() > 0) {
-        integer source_num;
-        for (source_num = 1; source_num <= get_num_connected_sources(); source_num = source_num + 1) {
-            result = result + "\n" +  
-                formatDebug(TRACE, "["+connected_source_key(source_num)+"] ")  +
-                connected_source_name(source_num) + ": " +  
-                EngFormat(connected_source_rate(source_num))+"/" + 
-                EngFormat(connected_source_capacity(source_num));
-        }
-    } else {
-        result = result + "\n" +  "No Power Sources Connected.";
-    }
-    return result;
-}
-
-// conected drains
+// conected drains - Needed for "Disconnewct Drain" menu. 
 // [key, name, demand, rate]
-integer get_num_connected_drains() {
-    return (integer)llLinksetDataRead("num_connected_drains"); 
+integer get_num_drains() {
+    return (integer)llLinksetDataRead("num_drains"); 
 }
 
 integer drain_key_index(string drain_key) {
-    if (get_num_connected_drains() == 0) {
+    if (get_num_drains() == 0) {
         return -1;
     }
     integer i;
-    for (i = 1; i <= get_num_connected_drains(); i = i + 1) {
+    for (i = 1; i <= get_num_drains(); i = i + 1) {
         if (llLinksetDataRead(DRAIN+(string)i+KEY) == drain_key) {
             return i;
         }
@@ -207,7 +182,7 @@ integer connected_drain_rate(integer drain_num) {
 }
 
 // ****************************************************
-// Constants and Variables for Second LIfe Dialog Boxes
+// Constants and Variables for Second Life Dialog Boxes
 string REQ = "-REQ";
 string ACK = "-ACK";
 string STATUS = "Status";
@@ -217,6 +192,7 @@ string DISCONNECT = "Disconnect";
 string CLOSE = "Close";
 string POWER = "Power";
 string RESET = "Reset";
+string RESTART = "Restart";
 string CONNECT_SOURCE = "Connect Src";
 string DISCONNECT_SOURCE = "Disc Src";
 string DISCONNECT_DRAIN = "Disc Drain";
@@ -229,6 +205,7 @@ key menuAgentKey;
 integer menuChannel;
 integer menuListen;
 integer menuTimeout;
+integer DDmenuPage; // 0-based
 
 string menuCheckbox(string title, integer onOff)
 // make checkbox menu item out of a button title and boolean state
@@ -325,17 +302,21 @@ resetMenu() {
 
 presentMainMenu(key whoClicked) {
     string message = "Power Panel Main Menu \n" +
-        "Logic Version " + logicVersion + "\n" +
-        "Menu Version " + menuVersion;
+        getScriptName(dataScriptName) + "\n" +
+        getScriptName(logicScriptName) + "\n" +
+        llGetScriptName();
     list buttons = [];
+    // system management menu items
+    buttons = buttons + DEBUG_LEVELS;
+    buttons = buttons + RESTART;
+    buttons = buttons + RESET;
+    // power management menu items
+    buttons = buttons + menuButtonActive(CONNECT_SOURCE, get_num_known_sources() > 0);
+    buttons = buttons + menuButtonActive(DISCONNECT_SOURCE, get_num_sources() > 0);
+    buttons = buttons + menuButtonActive(DISCONNECT_DRAIN, get_num_drains() > 0); 
+    buttons = buttons + menuCheckbox("Power", power_switch_state);
     buttons = buttons + STATUS;
     buttons = buttons + PING; 
-    buttons = buttons + RESET;
-    buttons = buttons + menuButtonActive(CONNECT_SOURCE, get_num_known_sources() > 0);
-    buttons = buttons + menuButtonActive(DISCONNECT_SOURCE, get_num_connected_sources() > 0);
-    buttons = buttons + menuButtonActive(DISCONNECT_DRAIN, get_num_connected_drains() > 0); 
-    buttons = buttons + menuCheckbox("Power", power_switch_state);
-    buttons = buttons + DEBUG_LEVELS;
     setUpMenu(mainMenu, whoClicked, message, buttons);
 }
 
@@ -374,7 +355,7 @@ presentDisonnectSourceMenu(key whoClicked) {
     string message = "Select Power Source to Disconnect:";
     integer i;
     list buttons = [];
-    for (i = 1; i <= get_num_connected_sources(); i = i + 1) {
+    for (i = 1; i <= get_num_sources(); i = i + 1) {
         message = message + "\n" + (string)i + " " + 
             connected_source_name(i) + " " + EngFormat(connected_source_capacity(i));
         buttons = buttons + [(string)i];
@@ -382,18 +363,40 @@ presentDisonnectSourceMenu(key whoClicked) {
     setUpMenu(DISCONNECT_SOURCE, whoClicked, message, buttons);    
 }
 
-presentDisonnectDrainMenu(key whoClicked) {
+presentDisonnectDrainMenu(key whoClicked, integer page) {
     string message = "Select Power Drain to Disconnect:";
-    integer i;
+    integer index;
     list buttons = [];
-    for (i = 1; i <= get_num_connected_drains(); i = i + 1) {
-        message = message + "\n" + (string)i + " " + 
-            connected_drain_name(i) + " " + EngFormat(connected_drain_demand(i));
-        buttons = buttons + [(string)i];
+    integer startindex;
+    integer endindex; 
+    integer numCDrains = get_num_drains();
+    DDmenuPage = page;
+    if (numCDrains <= 12) {
+        startindex = 1;
+        endindex = numCDrains;
+    } else {
+        startindex = 1 + DDmenuPage * 9;
+        endindex = 9 + DDmenuPage * 9;
+        if (endindex > numCDrains) {
+            endindex = numCDrains;
+        }
+        string left = "-";
+        if (page > 0) {
+            left = "<<";
+        }
+        string right = "-";
+        if (page < llFloor(numCDrains / 9)) {
+            right = ">>";
+        }
+        buttons = buttons + [left, mainMenu, right];
+    }
+    for (index = startindex; index <= endindex; index = index + 1) {
+        message = message + "\n" + (string)index + " " + 
+            connected_drain_name(index) + " " + EngFormat(connected_drain_demand(index));
+        buttons = buttons + [(string)index];
     }
     setUpMenu(DISCONNECT_DRAIN, whoClicked, message, buttons);    
 }
-
 
 // ***********************************
 // Reports
@@ -417,48 +420,82 @@ string EngFormat(integer quantity) {
     return (string)revisedQuantity+prefix;
 }
 
-string formatDebug(integer message_level, string message) {
-    string result = "";
-    if (message_level <= debug_level) {
-        result = message;
-    }
-    return result;
+report_status() {
+    sayDebug(INFO, "======================");
+    sayDebug(INFO, "Device Report for "+llGetObjectName());
+    sayDebug(DEBUG, "Free Memory: " + (string)llGetFreeMemory());
 }
 
-report_status(string objectKey) {
-    string status;
-    status = status + "\n" + "Device Report for "+llGetObjectName()+":";
-    status = status + list_known_sources();
-    status = status + list_connected_sources();
-    status = status + "\n-----\n" + "Free Memory: " + (string)llGetFreeMemory();
-    sayDebug(DEBUG, status);
+// ***********************************
+// Scripts
+
+string getScriptName(string name) {
+    integer numscripts = llGetInventoryNumber(INVENTORY_SCRIPT);
+    integer i;
+    for (i = 0; i < numscripts; i = i + 1) {
+        string aScriptName = llGetInventoryName(INVENTORY_SCRIPT, i);
+        integer index = llSubStringIndex(aScriptName, name);
+        if (index > -1) {
+             return aScriptName;
+        }
+    }
+    return "unknown";
 }
+
+resetScript(string scriptname) {
+    if (!llGetScriptState(scriptname)) {
+        sayDebug(WARN,"Script \"" + scriptname + "\" is not running.");
+    }
+    sayDebug(INFO,"Resetting script \"" + scriptname + "\"…");
+    llResetOtherScript(scriptname);
+    llSleep(2);
+    if (!llGetScriptState(scriptname)) {
+        sayDebug(INFO,"Attempting to restart script \"" + scriptname + "\"…");
+        llSetScriptState(scriptname, TRUE);
+        llSleep(4);
+        if (!llGetScriptState(scriptname)) {
+            sayDebug(ERROR,"Script \"" + scriptname + "\" is still not running after llSetScriptState(TRUE).");
+        } else {
+           sayDebug(INFO,"Successfully restarted script \"" + scriptname + "\"");
+        }
+    } else {
+        sayDebug(INFO,"Successfully reset script \"" + scriptname + "\"");
+    }
+}
+
+restartScripts() {
+    resetScript(getScriptName(dataScriptName));
+    resetScript(getScriptName(logicScriptName));
+    llSleep(1);
+    llResetScript();
+}
+
 default
 {
     state_entry()
     {
-        sayDebug(DEBUG, "state_entry");
+        sayDebug(TRACE, "state_entry");
         debug_level = (integer)llLinksetDataRead(DEBUG_LEVELS);
         setDebugLevelByNumber(debug_level);
-
-        // DistributionPanelLogic 2025-02-09
-        logicScriptName = llLinksetDataRead("logicScriptName");
-        logicVersion = llGetSubString(logicScriptName, -10, -1);
-        menuVersion = llGetSubString(llGetScriptName(), -10, -1);
-
         power_switch_state = (integer)llLinksetDataRead("power_switch_state");
         
         // listen to Novatech sonic screwdriver
         llListen(SONIC_CHANNEL, "", "", "ccSonic");
 
-        sayDebug(DEBUG, "state_entry done");
+        sayDebug(TRACE, "state_entry done");
     }
 
     touch_start(integer total_number)
     {
         //sayDebug(DEBUG, "touch_start");
         key whoClicked = llDetectedKey(0);
-        presentMainMenu(whoClicked);
+        key allowed = "b3947eb2-4151-bd6d-8c63-da967677bc69"; // guards
+        if (agentIsInGroup(whoClicked, allowed)) {
+            presentMainMenu(whoClicked);
+        } else {
+            llSay(-106969,(string)whoClicked);
+            llRegionSayTo(whoClicked, POWER_CHANNEL, ZAPREQ+"[2]");
+        }
     }
     
     listen( integer channel, string name, key objectKey, string message )
@@ -466,58 +503,70 @@ default
         if (channel == menuChannel) {
             sayDebug(TRACE, "listen menuIdentifier:"+menuIdentifier+" name:"+name+" message:"+message);
             resetMenu();
-            if (message == CLOSE) {
-                sayDebug(TRACE, "listen Close");
-            } else if (message == STATUS) {
-                report_status(objectKey);
-                llMessageLinked(LINK_SET, 0, STATUS, objectKey);
-            } else if (message == RESET) {
-                //sayDebug(DEBUG, "listen Reset sending reset message");
-                llMessageLinked(LINK_SET, 0, message, NULL_KEY);
-                llSleep(1);
-                //sayDebug(DEBUG, "listen Reset resetting Logic");
-                llResetOtherScript(logicScriptName);
-                llSetScriptState(logicScriptName, TRUE);
-                llResetScript();
-            } else if (message == DEBUG_LEVELS) {
+            // Main Menu
+            if (message == DEBUG_LEVELS) {
                 presentDebugLevelMenu(objectKey);
-            } else if (message == PING) {
-                llMessageLinked(LINK_SET, 0, PING, objectKey);
+            } else if (message == RESTART) {
+                restartScripts();
+            } else if (message == RESET) {
+                sayDebug(WARN,"Resetting Data and Restarting Scripts.");
+                llMessageLinked(LINK_SET, 0, "reset_data", NULL_KEY);
+                llSleep(2);
+                restartScripts();
+
             } else if (message == CONNECT_SOURCE) {
                 presentConnectSourceMenu(objectKey);
             } else if (message == DISCONNECT_SOURCE) {
                 presentDisonnectSourceMenu(objectKey);
             } else if (message == DISCONNECT_DRAIN) {
-                presentDisonnectDrainMenu(objectKey);
+                presentDisonnectDrainMenu(objectKey, 0);
+                
+            } else if (trimMessageButton(message) == POWER) {
+                power_switch_state = !power_switch_state;
+                llMessageLinked(LINK_SET, power_switch_state, POWER, NULL_KEY);
+            } else if (message == STATUS) {
+                report_status();
+                llMessageLinked(LINK_SET, 0, STATUS, objectKey);
+            } else if (message == PING) {
+                llMessageLinked(LINK_SET, 0, PING, objectKey);
+                
+            // menus with numeric buttons
             } else if (menuIdentifier == DEBUG_LEVELS) {
                 setDebugLevelByName(trimMessageButton(message));
                 llLinksetDataWrite(DEBUG_LEVELS, (string)debug_level);
                 llMessageLinked(LINK_SET, debug_level, DEBUG_LEVELS, NULL_KEY);
             } else if (menuIdentifier == CONNECT_SOURCE) {
                 sayDebug(DEBUG, "listen CONNECT_SOURCE from "+name+": "+message);
-                //sayDebug(DEBUG,known_source_key(unsorted((integer)message);
-                //sayDebug(DEBUG,known_source_name(unsorted((integer)message);
                 llRegionSayTo(known_source_key(unsorted((integer)message)), POWER_CHANNEL, CONNECT+REQ);
             } else if (menuIdentifier == DISCONNECT_SOURCE) {
                 sayDebug(DEBUG, "listen DISCONNECT_SOURCE from "+name+": "+message);
                 key source_key = connected_source_key((integer)message);
                 llRegionSayTo(source_key, POWER_CHANNEL, DISCONNECT+REQ);
-                llMessageLinked(LINK_SET, (integer)message, DISCONNECT+REQ, source_key);
+                llMessageLinked(LINK_SET, (integer)message, "handle_disconnect_req", source_key);
             } else if (menuIdentifier == DISCONNECT_DRAIN) {
                 sayDebug(DEBUG, "listen DISCONNECT_DRAIN from "+name+": "+message);
                 key drain_key = connected_drain_key((integer)message);
                 llRegionSayTo(drain_key, POWER_CHANNEL, DISCONNECT+REQ);
-                llMessageLinked(LINK_SET, (integer)message, DISCONNECT+REQ, drain_key);
-            } else if (trimMessageButton(message) == POWER) {
-                power_switch_state = !power_switch_state;
-                llMessageLinked(LINK_SET, power_switch_state, POWER, NULL_KEY);
-            } else if (message == "OK") {
-                // OK
+                llMessageLinked(LINK_SET, (integer)message, "handle_disconnect_req", drain_key);
+            // Both these menus go into the same handler in Data
+            // because Data can also receive generic DISCONNECT+ACKs 
+            // that it won't know whether they are source or drain.
+            // Separating them out here and making a deparate dispatcher is more complicated. 
+
+            // menus with numeric buttons and long lists of things
+            } else if (message == "<<") {
+                presentDisonnectDrainMenu(objectKey, DDmenuPage-1);
+            } else if (message == ">>") {
+                presentDisonnectDrainMenu(objectKey, DDmenuPage+1);
+            } else if (message == mainMenu) {
+                presentMainMenu(objectKey);
+                
             } else {
                 sayDebug(ERROR, "listen did not handle "+menuIdentifier+":"+message);
             }
         } else if (channel == SONIC_CHANNEL) {
             // If we get any message from a Novatech Sonic Sc rewdriver, toggle the power
+            sayDebug(WARN, "Sonic Screwdriver in use.");
             llRegionSayTo(objectKey, SONIC_CHANNEL, "ccSonicOK");
             power_switch_state = !power_switch_state;
             llMessageLinked(LINK_SET, power_switch_state, POWER, NULL_KEY);
