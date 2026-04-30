@@ -44,20 +44,28 @@ integer WARN = 1;
 integer INFO = 2;
 integer DEBUG = 3;
 integer TRACE = 4;
-string DEBUG_LEVELS = "DebugLevels";
+string DEBUG_LEVEL = "DebugLevel";
 list debug_levels = ["ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
-integer debug_level = 0;
-
-sendXP(key agent, integer XP) {
-    llRegionSayTo(agent, MONITOR_CHANNEL, llList2Json(JSON_OBJECT, ["XP", (string)XP]));
-}
+list debug_volumes = ["shout", "shout", "say", "whisper", "whisper"];
+integer debug_level = 2; // debug normally 2 info. 
 
 sayDebug(integer message_level, string message) {
     if (message_level <= debug_level) {
-        llSay(MONITOR_CHANNEL, llList2Json(JSON_OBJECT, [
-            llList2String(debug_levels, message_level), 
-            "MENU: " + message]));
+        string level = llList2String(debug_levels, message_level);
+        string volume = llList2String(debug_volumes, message_level);
+        string json = llList2Json(JSON_OBJECT, [level, "MENU: "+message]);
+        if (volume == "shout") {
+            llShout(MONITOR_CHANNEL, json);
+        } else if (volume == "say") {
+            llSay(MONITOR_CHANNEL, json);
+        } else if (volume == "whisper") {
+            llWhisper(MONITOR_CHANNEL, json);
+        } 
     }
+}
+
+setDebugLevel(integer new_debug_level) {
+    debug_level = new_debug_level;
 }
 
 setDebugLevelByName(string debug_level_name) {
@@ -71,6 +79,10 @@ setDebugLevelByNumber(integer new_debug_level) {
     debug_level = new_debug_level;
     string debug_level_name = llList2String(debug_levels, debug_level);
     sayDebug(TRACE,"setDebugLevelByNumber debug_level:"+debug_level_name);
+}
+
+sendXP(key agent, integer XP) {
+    llRegionSayTo(agent, MONITOR_CHANNEL, llList2Json(JSON_OBJECT, ["XP", (string)XP]));
 }
 
 integer get_power_switch_state() {
@@ -331,7 +343,7 @@ presentMainMenu(key whoClicked, integer allowed) {
     string message = panel_size + " Power Panel\n";    
     list buttons = [];
     buttons = buttons + STATUS;
-    buttons = buttons + menuButtonActive(DEBUG_LEVELS, allowed);
+    buttons = buttons + menuButtonActive(DEBUG_LEVEL, allowed);
     buttons = buttons + menuButtonActive(RESET, allowed);
     buttons = buttons + menuButtonActive(CONNECT_SOURCE, (get_num_known_sources() > 0) & allowed);
     buttons = buttons + menuButtonActive(DISCONNECT_SOURCE, (get_num_sources() > 0) & allowed);
@@ -353,7 +365,7 @@ handleMainMenu(key objectKey, string message) {
                 llMessageLinked(LINK_SET, ingroup, STATUS, objectKey);
                 llSleep(2);
                 sendXP(objectKey, 1);
-            } else if (message == DEBUG_LEVELS) {
+            } else if (message == DEBUG_LEVEL) {
                 presentDebugLevelMenu(objectKey);
             } else if (message == RESET) {
                 sendXP(objectKey, 10);
@@ -386,7 +398,7 @@ presentDebugLevelMenu(key whoClicked) {
     for (i = 0; i < llGetListLength(debug_levels); i = i + 1) {
         buttons = buttons + menuRadioButton(llList2String(debug_levels, i), debug_level_text);
     }
-    setUpMenu(DEBUG_LEVELS, whoClicked, message, buttons);
+    setUpMenu(DEBUG_LEVEL, whoClicked, message, buttons);
 }
 
 presentConnectSourceMenu(key whoClicked) {
@@ -570,12 +582,83 @@ restartScripts() {
     llResetScript();
 }
 
+handleMenu(string name, key objectKey, string message) {
+    sayDebug(TRACE, "listen menuIdentifier:"+menuIdentifier+" name:"+name+" message:"+message);
+    resetMenu();
+            
+    if (menuIdentifier == mainMenu) {
+        handleMainMenu(objectKey, message);
+    } else if (menuIdentifier == DEBUG_LEVEL) {
+        setDebugLevelByName(trimMessageButton(message));
+        llLinksetDataWrite(DEBUG_LEVEL, (string)debug_level);
+        llMessageLinked(LINK_SET, debug_level, DEBUG_LEVEL, NULL_KEY);
+        sendXP(objectKey, 1);
+    } else if (menuIdentifier == CONNECT_SOURCE) {
+        sayDebug(DEBUG, "listen CONNECT_SOURCE from "+name+": "+message);
+        llPlaySound(breaker_1, 1.0);
+        llRegionSayTo(get_known_source_key(unsorted((integer)message)), POWER_CHANNEL, CONNECT+REQ);
+        sayDebug(INFO, "Connected Source "+get_known_source_name((integer)message));
+        sendXP(objectKey, 10);
+    } else if (menuIdentifier == DISCONNECT_SOURCE) {
+        llPlaySound(breaker_1, 1.0);
+        sayDebug(DEBUG, "listen DISCONNECT_SOURCE from "+name+": "+message);
+        key source_key = get_connected_source_key((integer)message);
+        llRegionSayTo(source_key, POWER_CHANNEL, DISCONNECT+REQ);
+        llMessageLinked(LINK_SET, (integer)message, "handle_disconnect_req", source_key);
+        sayDebug(INFO, "Disonnected Source "+get_connected_source_name((integer)message));
+        sendXP(objectKey, 10);
+
+    // DISCONNECT_SOURCE and DISCONNECT_DRAIN go into the same handler in Data
+    // because Data can also receive generic DISCONNECT+ACKs 
+    // that it won't know whether they are source or drain.
+    // Separating them out here and making a deparate dispatcher is more complicated. 
+    } else if (menuIdentifier == DISCONNECT_DRAIN) {
+        if (message == leftArrow) {
+            presentDrainBreakerMenu(objectKey, DDMenuPage-1, TRUE);
+        } else  if (message == rightArrow) {
+            presentDrainBreakerMenu(objectKey, DDMenuPage+1, TRUE);
+        } else if (message == mainMenu) {
+            presentMainMenu(objectKey, TRUE);
+        } else {
+            sayDebug(DEBUG, "listen DISCONNECT_DRAIN from "+name+": "+message);
+            llPlaySound(breaker_1, 1.0);
+            key drain_key = get_drain_key((integer)message);
+            llRegionSayTo(drain_key, POWER_CHANNEL, DISCONNECT+REQ);
+            llMessageLinked(LINK_SET, (integer)message, "handle_disconnect_req", drain_key);
+            sendXP(objectKey, 5);
+            llSleep(1.0); // pause for linkset data write
+            sayDebug(INFO, "Disonnected Drain "+get_drain_name((integer)message));
+            presentDrainBreakerMenu(objectKey, 0, TRUE);
+        }
+
+    // DISCONNECT_SOURCE and DISCONNECT_DRAIN go into the same handler in Data
+    // because Data can also receive generic DISCONNECT+ACKs 
+    // that it won't know whether they are source or drain.
+    // Separating them out here and making a deparate dispatcher is more complicated. 
+    } else if (menuIdentifier == BREAKERS) {
+        if (message == leftArrow) {
+            presentDrainBreakerMenu(objectKey, DDMenuPage-1, FALSE);
+        } else  if (message == rightArrow) {
+            presentDrainBreakerMenu(objectKey, DDMenuPage+1, FALSE);
+        } else if (message == mainMenu) {
+            presentMainMenu(objectKey, TRUE);
+        } else {
+            handleBreaker(message);
+            sendXP(objectKey, 2);
+            presentDrainBreakerMenu(objectKey, 0, FALSE);
+        }
+    } else {
+        sayDebug(ERROR, "listen did not handle "+menuIdentifier+":"+message);
+    }
+}
+
+
 default
 {
     state_entry()
     {
         sayDebug(TRACE, "state_entry");
-        debug_level = (integer)llLinksetDataRead(DEBUG_LEVELS);
+        debug_level = (integer)llLinksetDataRead(DEBUG_LEVEL);
         setDebugLevelByNumber(debug_level);
 
         // make sure logic has figured out whether it's main or sub
@@ -598,72 +681,7 @@ default
     listen(integer channel, string name, key objectKey, string message)
     {
         if (channel == menuChannel) {
-            sayDebug(TRACE, "listen menuIdentifier:"+menuIdentifier+" name:"+name+" message:"+message);
-            resetMenu();
-            
-            if (menuIdentifier == mainMenu) {
-                handleMainMenu(objectKey, message);
-            } else if (menuIdentifier == DEBUG_LEVELS) {
-                setDebugLevelByName(trimMessageButton(message));
-                llLinksetDataWrite(DEBUG_LEVELS, (string)debug_level);
-                llMessageLinked(LINK_SET, debug_level, DEBUG_LEVELS, NULL_KEY);
-                sendXP(objectKey, 1);
-            } else if (menuIdentifier == CONNECT_SOURCE) {
-                sayDebug(DEBUG, "listen CONNECT_SOURCE from "+name+": "+message);
-                llPlaySound(breaker_1, 1.0);
-                llRegionSayTo(get_known_source_key(unsorted((integer)message)), POWER_CHANNEL, CONNECT+REQ);
-                sayDebug(INFO, "Connected Source "+get_known_source_name((integer)message));
-                sendXP(objectKey, 10);
-            } else if (menuIdentifier == DISCONNECT_SOURCE) {
-                llPlaySound(breaker_1, 1.0);
-                sayDebug(DEBUG, "listen DISCONNECT_SOURCE from "+name+": "+message);
-                key source_key = get_connected_source_key((integer)message);
-                llRegionSayTo(source_key, POWER_CHANNEL, DISCONNECT+REQ);
-                llMessageLinked(LINK_SET, (integer)message, "handle_disconnect_req", source_key);
-                sayDebug(INFO, "Disonnected Source "+get_connected_source_name((integer)message));
-                sendXP(objectKey, 10);
-
-            // DISCONNECT_SOURCE and DISCONNECT_DRAIN go into the same handler in Data
-            // because Data can also receive generic DISCONNECT+ACKs 
-            // that it won't know whether they are source or drain.
-            // Separating them out here and making a deparate dispatcher is more complicated. 
-            } else if (menuIdentifier == DISCONNECT_DRAIN) {
-                if (message == leftArrow) {
-                    presentDrainBreakerMenu(objectKey, DDMenuPage-1, TRUE);
-                } else  if (message == rightArrow) {
-                    presentDrainBreakerMenu(objectKey, DDMenuPage+1, TRUE);
-                } else if (message == mainMenu) {
-                    presentMainMenu(objectKey, TRUE);
-                } else {
-                    sayDebug(DEBUG, "listen DISCONNECT_DRAIN from "+name+": "+message);
-                    llPlaySound(breaker_1, 1.0);
-                    key drain_key = get_drain_key((integer)message);
-                    llRegionSayTo(drain_key, POWER_CHANNEL, DISCONNECT+REQ);
-                    llMessageLinked(LINK_SET, (integer)message, "handle_disconnect_req", drain_key);
-                    sendXP(objectKey, 5);
-                    llSleep(1.0); // pause for linkset data write
-                    sayDebug(INFO, "Disonnected Drain "+get_drain_name((integer)message));
-                    presentDrainBreakerMenu(objectKey, 0, TRUE);
-                }
-            // DISCONNECT_SOURCE and DISCONNECT_DRAIN go into the same handler in Data
-            // because Data can also receive generic DISCONNECT+ACKs 
-            // that it won't know whether they are source or drain.
-            // Separating them out here and making a deparate dispatcher is more complicated. 
-            } else if (menuIdentifier == BREAKERS) {
-                if (message == leftArrow) {
-                    presentDrainBreakerMenu(objectKey, DDMenuPage-1, FALSE);
-                } else  if (message == rightArrow) {
-                    presentDrainBreakerMenu(objectKey, DDMenuPage+1, FALSE);
-                } else if (message == mainMenu) {
-                    presentMainMenu(objectKey, TRUE);
-                } else {
-                    handleBreaker(message);
-                    sendXP(objectKey, 2);
-                    presentDrainBreakerMenu(objectKey, 0, FALSE);
-                }
-            } else {
-                sayDebug(ERROR, "listen did not handle "+menuIdentifier+":"+message);
-            }
+            handleMenu(name, objectKey, message);
         } else if (channel == SONIC_CHANNEL) {
             // If we get any message from a Novatech Sonic Screwdriver, toggle the power
             sayDebug(WARN, "Sonic Screwdriver in use.");
