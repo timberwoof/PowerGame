@@ -51,17 +51,23 @@ integer WARN = 1;
 integer INFO = 2;
 integer DEBUG = 3;
 integer TRACE = 4;
-string DEBUG_LEVELS = "DebugLevels";
+string DEBUG_LEVEL = "DebugLevel";
 list debug_levels = ["ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
+list debug_volumes = ["shout", "shout", "say", "whisper", "whisper"];
 integer debug_level = 2; // debug normally 2 info. 
-
-sendMonitor(string keystr, string message) {
-    llSay(MONITOR_CHANNEL, llList2Json(JSON_OBJECT, [keystr, message]));
-}
 
 sayDebug(integer message_level, string message) {
     if (message_level <= debug_level) {
-        sendMonitor(llList2String(debug_levels, message_level), "MENU: " + message);
+        string level = llList2String(debug_levels, message_level);
+        string volume = llList2String(debug_volumes, message_level);
+        string json = llList2Json(JSON_OBJECT, [level, "DATA: "+message]);
+        if (volume == "shout") {
+            llShout(MONITOR_CHANNEL, json);
+        } else if (volume == "say") {
+            llSay(MONITOR_CHANNEL, json);
+        } else if (volume == "whisper") {
+            llWhisper(MONITOR_CHANNEL, json);
+        } 
     }
 }
 
@@ -75,7 +81,7 @@ integer num_known_sources = 0; // 1-based in numbering
 
 delete_known_sources(integer warn) {
     if (warn) {
-        sayDebug(WARN, "Deleting Known Sources.");
+        sayDebug(INFO, "Deleting Known Sources.");
     }
     integer i;
     // Kill the hell out of them
@@ -191,7 +197,7 @@ handle_source_ping_ack(string source_key, string source_name, integer source_pow
 integer num_sources = 0;
 
 delete_sources() {
-    sayDebug(WARN,"Deleting Connected Sources.");
+    sayDebug(INFO,"Deleting Connected Sources.");
     integer i;
     for (i = 0; i <= 100; i = i + 1) {
         llLinksetDataDelete(SOURCE+(string)i+KEY);
@@ -262,11 +268,11 @@ handle_source_connect_ack(string source_key, string source_name, integer source_
 
     // Handle bad requests
     if (get_known_source_key_index(source_key) < 0) {
-        sayDebug(WARN, "handle_source_connect_ack "+source_name+" was not known."); // error
+        sayDebug(INFO, "handle_source_connect_ack "+source_name+" was not known."); // error
         return;
     }
     if (get_drain_key_index(source_key) >= 0) {
-        sayDebug(WARN, "handle_source_connect_ack "+source_name+" was already connected as a Drain.");
+        sayDebug(INFO, "handle_source_connect_ack "+source_name+" was already connected as a Drain.");
         // weird as hell but we need to defend against it.
         return;
     }        
@@ -274,6 +280,7 @@ handle_source_connect_ack(string source_key, string source_name, integer source_
     llPlaySound(breaker_1, 1);
     upsert_source(source_key, source_name, source_capacity, 0);
     calculate_source_power_capacity();
+    llMessageLinked(LINK_SET, 0, "handle_source_connect_ack", source_key);
     // calculate_source_power_rate when that's done
 }
 
@@ -292,7 +299,7 @@ handle_disconnect_ack(string source_key) {
         calculate_source_power_rate();
         llMessageLinked(LINK_SET, source_num, "handle_disconnect_ack", source_key);
     } else {
-        sayDebug(WARN, "handle_disconnect_ack a source was not connected.");
+        sayDebug(INFO, "handle_disconnect_ack a source was not connected.");
     }
 }
 
@@ -304,12 +311,13 @@ list_sources(integer ingroup) {
     integer total_rate = 0;
     integer total_capacity = 0;
     if (num_sources > 0) {
-        for (source_num = 1; source_num <= num_sources; source_num = source_num + 1) {
+        for (source_num = 1; source_num < num_sources; source_num = source_num + 1) {
             source_rate = get_source_rate(source_num);
             total_rate = total_rate + source_rate;
             source_capacity = get_source_capacity(source_num);
             total_capacity = total_capacity + source_capacity; 
             status = status + "\n" + 
+                (string)source_num + " " + 
                 get_source_name(source_num) + ": " + 
                 engFormat(source_rate)+"/" + 
                 engFormat(source_capacity);
@@ -334,7 +342,7 @@ list_sources(integer ingroup) {
 integer num_drains = 0;
 
 delete_drains() {
-    sayDebug(WARN,"Deleting Connected Drains.");
+    sayDebug(INFO,"Deleting Connected Drains.");
     integer i;
     for (i = 0; i <= 100; i = i + 1) {
         llLinksetDataDelete(DRAIN+(string)i+KEY);
@@ -389,21 +397,21 @@ fix_drain_switches(){
     }
 }
 
-handle_ping_req(string object_key, string object_name) {
+handle_ping_request(string object_key, string object_name) {
     // respond to ping with max power capacity
     //sayDebug(DEBUG, "HPR");
     integer sourceIndex = get_source_key_index(object_key);
     if (sourceIndex > -1) {
         // if this ping was from a source I knew about
         // then make sure it knows about me.
-        sayDebug(DEBUG, "handle_ping_req sends \""+CONNECT+REQ+ "\" to "+object_name);
+        sayDebug(DEBUG, "handle_ping_request sends \""+CONNECT+REQ+ "\" to "+object_name);
         llRegionSayTo(object_key, POWER_CHANNEL, CONNECT+REQ);
         llSleep(1.0);
-        llMessageLinked(LINK_SET, sourceIndex, "handle_ping_req", object_key);
+        llMessageLinked(LINK_SET, sourceIndex, "handle_ping_request", object_key);
     } else {
         // this came from a drain, so send it an ack
         string message = PING+ACK+"["+llLinksetDataRead("source_power_capacity")+"]";
-        sayDebug(DEBUG, "handle_ping_req sends \""+message+ "\" to "+object_name);
+        sayDebug(DEBUG, "handle_ping_request sends \""+message+ "\" to "+object_name);
         llRegionSayTo(object_key, POWER_CHANNEL, message);
         
         // If this was from an known drain then update it
@@ -459,7 +467,7 @@ handle_drain_connect_req(string drain_key, string objectName) {
     sayDebug(DEBUG, "handle_drain_connect_req("+objectName+")");//+(string)drain_key+", "
     llPlaySound(breaker_1, 1);
     if (get_source_key_index(drain_key) > -1) {
-        sayDebug(WARN, objectName+" was already connected as a Source.");
+        sayDebug(INFO, objectName+" was already connected as a Source.");
     } else {
         upsert_drain(drain_key, objectName);    
         string message = CONNECT+ACK+"["+llLinksetDataRead("source_power_capacity")+"]";
@@ -485,7 +493,7 @@ handle_disconnect_req(string objectKey) {
     } else if (source_num > -1) {
         delete_source(source_num);
         llMessageLinked(LINK_SET, 0, "handle_disconnect_req_source", NULL_KEY);
-        sayDebug(WARN, "handle_disconnect_req source ("+objectName+") succeeded.");
+        sayDebug(INFO, "handle_disconnect_req source ("+objectName+") succeeded.");
     } else {
         sayDebug(DEBUG, "handle_disconnect_req unknown object ("+objectName+") attempted disconnect");
     }
@@ -628,7 +636,7 @@ default
 {
     state_entry()
     {
-        debug_level = (integer)llLinksetDataRead(DEBUG_LEVELS);
+        debug_level = (integer)llLinksetDataRead(DEBUG_LEVEL);
         setDebugLevel(debug_level);
         sayDebug(DEBUG, "state_entry");
         
@@ -652,7 +660,7 @@ default
             delete_known_sources(1);
             delete_sources();
             delete_drains();
-        } else if (message == DEBUG_LEVELS) {
+        } else if (message == DEBUG_LEVEL) {
             setDebugLevel(Number);
         } else if (message == PING) {
             send_source_ping_req();
@@ -670,17 +678,21 @@ default
             sayDebug(TRACE, "link_message ignored");
         } else if (message == "delete_drain") {
             delete_drain(Number);
-        } else if (message == "handle_ping_req") {
+        } else if (message == "handle_ping_request") {
+            sayDebug(TRACE, "link_message ignored");
+        } else if (message == "handle_source_connect_ack") {
             sayDebug(TRACE, "link_message ignored");
         // we send these once we know whether source or drain was disconnected.
         } else if (message == "handle_disconnect_req_drain") {
             sayDebug(TRACE, "link_message ignored");
         } else if (message == "handle_disconnect_req_source") {
             sayDebug(TRACE, "link_message ignored");
+        } else if (message == "handle_disconnect_ack") {
+            sayDebug(TRACE, "link_message ignored");
         } else if (message == "HandleBreaker") {
             sayDebug(TRACE, "link_message ignored");
         } else {
-            sayDebug(ERROR, "link_message did not handle link message "+(string)Number+", "+message);
+            sayDebug(ERROR, "link_message did not handle message "+(string)Number+", "+message);
         }
     }
 
@@ -690,7 +702,7 @@ default
             string trimmed_message = trimMessageParameters(message);
             integer parameter = getMessageParameter(message);
             if (message == PING+REQ) {
-                handle_ping_req(objectKey, name);
+                handle_ping_request(objectKey, name);
             } else if (trimmed_message == PING+ACK) {
                 handle_source_ping_ack(objectKey, name, parameter);
             } else if (trimmed_message == CONNECT+REQ) {
