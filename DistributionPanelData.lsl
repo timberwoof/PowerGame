@@ -57,17 +57,13 @@ string DEBUG_LEVELS = "DebugLevels";
 list debug_levels = ["ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
 integer debug_level = 2; // debug normally 2 info. 
 
+sendMonitor(string keystr, string message) {
+    llSay(MONITOR_CHANNEL, llList2Json(JSON_OBJECT, [keystr, message]));
+}
+
 sayDebug(integer message_level, string message) {
-    message = "DATA "+llList2String(debug_levels, message_level) + ": " + message;
     if (message_level <= debug_level) {
-        if (message_level <= WARN) {
-            // warnings and errors on local chat and on Power Monitor HUD
-            llShout(MONITOR_CHANNEL, message);
-            llWhisper(0, message);
-        } else {
-            // everyting else just on Power Monitor HUD
-            llSay(MONITOR_CHANNEL, message);
-        }
+        sendMonitor(llList2String(debug_levels, message_level), "MENU: " + message);
     }
 }
 
