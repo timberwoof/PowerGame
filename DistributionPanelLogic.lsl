@@ -95,19 +95,6 @@ integer get_known_source_key_index(string source_key) {
 integer source_power_capacity = 0;
 integer source_power_rate = 0;
 
-delete_sources() {
-    integer i;
-    for (i = 0; i <= 100; i = i + 1) {
-        llLinksetDataDelete(SOURCE+(string)i+KEY);
-        llLinksetDataDelete(SOURCE+(string)i+NAME);
-        llLinksetDataDelete(SOURCE+(string)i+CAPACITY);
-        llLinksetDataDelete(SOURCE+(string)i+RATE);
-    }
-    llLinksetDataWrite("num_sources", "0");
-    source_power_capacity = 0;
-    source_power_rate = 0;
-}
-
 integer get_num_sources() {
     return (integer)llLinksetDataRead("num_sources");
 }
@@ -200,46 +187,6 @@ calculate_source_power_rate() {
     sayDebug(DEBUG, "calculate_source_power_rate() = "+engFormat(source_power_rate));
 }
 
-handle_source_connect_ack(string source_key, string source_name, integer source_capacity) {
-    // a source said yes to connection request.
-    // Add it to our list of sources and recalculateulate power capacity
-    sayDebug(DEBUG, "handle_source_connect_ack(["+source_name+"]): "+engFormat(source_capacity));
-
-    // Handle bad requests
-    if (get_known_source_key_index(source_key) < 0) {
-        sayDebug(WARN, "HSCA ["+source_name+"] was not known."); // error
-        return;
-    }
-    if (get_drain_key_index(source_key) >= 0) {
-        sayDebug(WARN, "HSCA ["+source_name+"] was already connected as a Drain.");
-        // weird as hell but we need to defend against it.
-        return;
-    }        
-    // register the source
-    llPlaySound(breaker_1, 1);
-    upsert_source(source_key, source_name, source_capacity, 0, 0);
-    calculate_source_power_capacity();
-    request_power_from_sources(TRUE, drain_power_demand);
-    // calculate_source_power_rate when that's done
-}
-
-handle_disconnect_ack(string source_key) {
-    // a source acknowledges disconnection
-    // delete from list of sources and recalculateulate capacity
-    //sayDebug(DEBUG, "HDA("+(string)source_key+", "+objectName+")");
-
-    integer source_num = get_source_key_index(source_key);
-    string objectName = llKey2Name(source_key);
-    if (source_num > -1) {
-        sayDebug(DEBUG, "handle_disconnect_ack disconnecting "+objectName);
-        calculate_source_power_capacity();
-        calculate_source_power_rate();
-        request_power_from_sources(TRUE, drain_power_demand);
-    } else {
-        sayDebug(DEBUG, "handle_disconnect_ack ("+objectName+") was not connected.");
-    }
-}
-
 handle_source_power_ack(string source_key, string source_name, integer source_power) {
     // a source answers power request
     // if it's different enough from what we wanted, 
@@ -303,7 +250,8 @@ request_power_from_sources(integer force, integer newPowerDemand) {
                 request = distributed_power_demand + newPowerDemand - (distributed_power_demand * num_sources);
             }
             integer nowRate = get_source_rate(source_num);
-            sayDebug(DEBUG, "request_power_from_sources ["+source_name+"] "+engFormat(nowRate)+" -> "+engFormat(request));
+            sayDebug(DEBUG, "request_power_from_sources ["+source_name+"] "+
+                engFormat(nowRate)+" -> "+engFormat(request));
             set_source_demand(source_num,request);
             llRegionSayTo(source_key, POWER_CHANNEL, POWER+REQ+"["+(string)request+"]");
             llSleep(switch_delay);
@@ -318,19 +266,6 @@ request_power_from_sources(integer force, integer newPowerDemand) {
 // conected drains
 integer drain_power_rate;
 integer drain_power_demand;
-
-delete_drains() {
-    integer i;
-    for (i = 0; i <= 100; i = i + 1) {
-        llLinksetDataDelete(DRAIN+(string)i+KEY);
-        llLinksetDataDelete(DRAIN+(string)i+NAME);
-        llLinksetDataDelete(DRAIN+(string)i+DEMAND);
-        llLinksetDataDelete(DRAIN+(string)i+RATE);
-    }
-    llLinksetDataWrite("num_drains", "0"); 
-    calculate_drain_power_demand();
-    calculate_drain_power_rate();
-}
 
 integer get_num_drains() {
     return (integer)llLinksetDataRead("num_drains");
@@ -371,6 +306,7 @@ upsert_drain(string drain_key, string drain_name) {
     integer num_drains = get_num_drains();
     if (index < 0) {
         // a new drain
+        llPlaySound(breaker_1, 1);
         integer num_drains = num_drains + 1;
         llLinksetDataWrite("num_drains", (string)num_drains);
         index = num_drains;
@@ -379,23 +315,6 @@ upsert_drain(string drain_key, string drain_name) {
     }
     llLinksetDataWrite(DRAIN+(string)index+KEY, drain_key); 
     llLinksetDataWrite(DRAIN+(string)index+NAME, drain_name);
-}
-
-delete_drain(integer drain_num) {
-    integer i;
-    integer num_drains = get_num_drains();
-    for (i = drain_num; i < num_drains; i = i + 1) {
-        llLinksetDataWrite(DRAIN+(string)i+KEY, get_drain_key(i+1)); 
-        llLinksetDataWrite(DRAIN+(string)i+NAME, get_drain_name(i+1)); 
-        llLinksetDataWrite(DRAIN+(string)i+DEMAND, (string)get_drain_demand(i+1)); 
-        llLinksetDataWrite(DRAIN+(string)i+RATE, (string)get_drain_rate(i+1));  
-    }
-    llLinksetDataDelete(DRAIN+(string)num_drains+KEY);
-    llLinksetDataDelete(DRAIN+(string)num_drains+NAME);
-    llLinksetDataDelete(DRAIN+(string)num_drains+DEMAND);
-    llLinksetDataDelete(DRAIN+(string)num_drains+RATE);
-    num_drains = num_drains - 1;
-    llLinksetDataWrite("num_drains", (string)num_drains); 
 }
 
 calculate_drain_power_demand() {
@@ -488,7 +407,8 @@ update_drain_powers() {
     // If drain power demand exceeds what all the sources can supply, we shut down. 
     // If drain power demand exceeds what the sources are supplying, we ask for more power. 
     // If drain power demand can be supplied, then give each drain what it wants. 
-    sayDebug(DEBUG,"update_drain_powers("+on_off_string(power_switch_state)+") drain_power_demand: "+ engFormat(drain_power_demand)); 
+    sayDebug(DEBUG,"update_drain_powers("+on_off_string(power_switch_state)+")"+
+        " drain_power_demand: "+ engFormat(drain_power_demand)); 
     integer num_drains = get_num_drains();
     if (power_switch_state) {
         if (drain_power_demand > MAX_power_capacity) {
@@ -530,7 +450,8 @@ update_drain_powers() {
                 // we don't need to fuck around with this different_enough stuff. 
                 //if (different_enough(wasRate, grant)) {
                 if (wasRate != grant) {
-                    sayDebug(DEBUG, "update_drain_powers update ["+drain_name+"] "+engFormat(wasRate)+" -> "+engFormat(grant));
+                    sayDebug(DEBUG, "update_drain_powers update ["+drain_name+"] "+
+                        engFormat(wasRate)+" -> "+engFormat(grant));
                     update_drain_power_rate(FALSE, drain_num, grant);
                 }
             }
@@ -679,6 +600,9 @@ default
             
         } else if (message == "handle_ping_request") {
             handle_ping_request(objectKey, Number);
+        } else if (message == "handle_source_connect_ack") {
+            request_power_from_sources(TRUE, drain_power_demand);
+            sayDebug(TRACE, "handle_source_connect_ack succeeded.");
         } else if (message == "handle_disconnect_req_source") {
             request_power_from_sources(TRUE, drain_power_demand);
             sayDebug(TRACE, "handle_disconnect_req_source succeeded.");
