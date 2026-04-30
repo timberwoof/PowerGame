@@ -1,6 +1,6 @@
 // DistribuitionPanelLogic
 // Power Distribution Panel Logic
-// This module is all about maintaining connecitons and doing calations 
+// This module is about power request and fulfillment logic 
 
 string debug_string = "Info";
 
@@ -21,9 +21,9 @@ integer sourcePowerAcks = FALSE;
 string ACK = "-ACK";
 string REQ = "-REQ";
 string POWER = "Power";
-string PING = "Ping";
-string CONNECT = "Connect";
-string DISCONNECT = "Disconnect";
+//string PING = "Ping";
+//string CONNECT = "Connect";
+//string DISCONNECT = "Disconnect";
 
 string RESET = "Reset";
 string NONE = "None";
@@ -75,6 +75,7 @@ sayDebug(integer message_level, string message) {
         } 
     }
 }
+
 
 setDebugLevel(integer new_debug_level) {
     debug_level = new_debug_level;
@@ -143,15 +144,8 @@ set_source_demand(integer source_num, integer source_demand) {
     llLinksetDataWrite(symbol, (string)source_demand);
 }
 
-handle_ping_request(key object_key, integer source_index){
-    string message = POWER+REQ+"["+(string)get_source_rate(source_index)+"]";
-    string object_name = get_source_name(source_index);
-    sayDebug(DEBUG, "handle_ping_request sends \""+message+ "\" to "+object_name);
-    llRegionSayTo(object_key, POWER_CHANNEL, message);
-}
-
 calculate_source_power_capacity() {
-    // calculateulate the total we could receive from all the connected sources
+    // calculate the total we could receive from all the connected sources
     // Called by connect-ack and DISCONNECT-ack
     sayDebug(DEBUG, "calculate_source_power_capacity");
     source_power_capacity = 0;
@@ -167,7 +161,7 @@ calculate_source_power_capacity() {
 }
 
 calculate_source_power_rate() {
-    // calculateulate the total we are receiving from all the sources
+    // calculate the total we are receiving from all the sources
     source_power_rate = 0;
     integer source_num;
     integer num_sources = get_num_sources();
@@ -179,9 +173,8 @@ calculate_source_power_rate() {
 }
 
 handle_source_power_ack(string source_key, string source_name, integer source_power) {
-    // a source answers power request
-    // if it's different enough from what we wanted, 
-    // update the connected-Sources list with that power
+    // A source answers power request.
+    // Update the connected-Sources list with that power.
     // queue up a call to update_drain_powers   
     sayDebug(DEBUG, "handle_source_power_ack(["+source_name+"], "+engFormat(source_power)+")");
     integer source_num = get_source_key_index(source_key);
@@ -309,7 +302,7 @@ upsert_drain(string drain_key, string drain_name) {
 }
 
 calculate_drain_power_demand() {
-    // calculateulate the total power demanded by drains
+    // calculate the total power demanded by drains
     // Called by connect-request and disconnect-request
     drain_power_demand = 0;
     integer drain_num;
@@ -322,7 +315,7 @@ calculate_drain_power_demand() {
 }
 
 calculate_drain_power_rate() {
-    // calculateulate the total power used by drains
+    // calculate the total power used by drains
     // Called by connect-request and disconnect-request
     drain_power_rate = 0;
     integer drain_num;
@@ -382,6 +375,23 @@ cut_all_drain_power()
     drain_power_rate = 0;
 }
 
+switch_power(integer new_power_switch_state) {
+    sayDebug(DEBUG, "switch_power("+on_off_string(new_power_switch_state)+")");
+    power_switch_state = new_power_switch_state;
+    if (new_power_switch_state) {
+        llPlaySound(kill_switch_wheff, 1);
+        request_power_from_sources(TRUE, drain_power_demand);
+        // When the source sends ack, we will then send power-acks to the drains. 
+    } else {
+        // Cut power to all the drains.
+        // This is fine. This is what we want to to. 
+        llPlaySound(kill_switch_bonk, 1);
+        request_power_from_sources(TRUE, 0);
+        cut_all_drain_power();
+    }
+    llLinksetDataWrite("power_switch_state",(string)power_switch_state);
+}
+
 update_drain_powers() {
     // POWER+REQ -> handle_drain_power_request -> "drainPowerReqs" 
     //
@@ -395,9 +405,9 @@ update_drain_powers() {
     //
     // update Logic:
     // If drain power demand exceeds what the panel can carry, we shut down.
-    // If drain power demand exceeds what all the sources can supply, we shut down. 
     // If drain power demand exceeds what the sources are supplying, we ask for more power. 
     // If drain power demand can be supplied, then give each drain what it wants. 
+    // If drain power demand exceeds what a source can supply, it limits power. 
     sayDebug(DEBUG,"update_drain_powers("+on_off_string(power_switch_state)+")"+
         " drain_power_demand: "+ engFormat(drain_power_demand)); 
     integer num_drains = get_num_drains();
@@ -407,14 +417,7 @@ update_drain_powers() {
             " drain_power_demand "+engFormat(drain_power_demand) +
             " exceeds max panel capacity " + engFormat(MAX_power_capacity) + ". "+
             " Shutting down all drains.");
-            switch_power(0);
-        //} else if (drain_power_demand > source_power_capacity) {
-        //    sayDebug(WARN, "update_drain_powers:"+
-        //    " drain_power_demand "+engFormat(drain_power_demand) +
-        //    " exceeds source_power_capacity " + engFormat(source_power_capacity) + ". "+
-        //    " Shutting down all drains.");
-        //    switch_power(0);
-        // *** No, let the source handle this problem.
+            switch_power(0); // turn off switch and send zero power to drains
         } else if (source_power_rate == 0) {
             sayDebug(WARN, "update_drain_powers: source_power_rate == 0");
             cut_all_drain_power();
@@ -436,15 +439,7 @@ update_drain_powers() {
             for (drain_num = 1; drain_num <= num_drains; drain_num = drain_num + 1) {
                 string drain_name = get_drain_name(drain_num);
                 integer grant = llFloor(get_drain_demand(drain_num) * power_fraction) * get_drain_switch(drain_num);
-                integer wasRate = get_drain_rate(drain_num);
-                // With the rule that we have a hierarchy of big and small panels,
-                // we don't need to fuck around with this different_enough stuff. 
-                //if (different_enough(wasRate, grant)) {
-                if (wasRate != grant) {
-                    sayDebug(DEBUG, "update_drain_powers update ["+drain_name+"] "+
-                        engFormat(wasRate)+" -> "+engFormat(grant));
-                    update_drain_power_rate(FALSE, drain_num, grant);
-                }
+                update_drain_power_rate(FALSE, drain_num, grant);
             }
         }
         calculate_drain_power_rate();
@@ -452,23 +447,6 @@ update_drain_powers() {
         // power switch is off, so shut it all down. 
         cut_all_drain_power();
     }
-}
-
-switch_power(integer new_power_switch_state) {
-    sayDebug(DEBUG, "switch_power("+on_off_string(new_power_switch_state)+")");
-    power_switch_state = new_power_switch_state;
-    if (new_power_switch_state) {
-        llPlaySound(kill_switch_wheff, 1);
-        request_power_from_sources(TRUE, drain_power_demand);
-        // When the source sends ack, we will then send power-acks to the drains. 
-    } else {
-        // Cut power to all the drains.
-        // This is fine. This is what we want to to. 
-        llPlaySound(kill_switch_bonk, 1);
-        request_power_from_sources(TRUE, 0);
-        cut_all_drain_power();
-    }
-    llLinksetDataWrite("power_switch_state",(string)power_switch_state);
 }
 
 // ***********************************
@@ -589,8 +567,6 @@ default
         } else if (message == DEBUG_LEVEL) {
             setDebugLevel(Number);
             
-        } else if (message == "handle_ping_request") {
-            handle_ping_request(objectKey, Number);
         } else if (message == "handle_source_connect_ack") {
             request_power_from_sources(TRUE, drain_power_demand);
             sayDebug(TRACE, "handle_source_connect_ack succeeded");
@@ -619,8 +595,8 @@ default
             
         } else if (message == "Ping") {
             sayDebug(TRACE, "Ping ignored");
-        } else if (message == "handle_ping_req") {
-            sayDebug(TRACE, "handle_ping_req ignored");
+        } else if (message == "handle_ping_request") {
+            sayDebug(TRACE, "handle_ping_request ignored");
         } else if (message == "handle_disconnect_req") {
             sayDebug(TRACE, "handle_disconnect_req ignored");
         } else {
