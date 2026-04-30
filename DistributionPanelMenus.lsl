@@ -34,6 +34,8 @@ string MAIN = "Main";
 string SUB = "Sub";
 string panel_size;
 
+string breaker_1 = "238d4742-c609-fe39-7094-259ca80a9a69";
+
 // *********************************
 // Debug system
 // Higher numbers are lower priority.
@@ -80,7 +82,6 @@ set_power_switch_state(integer newState) {
     llMessageLinked(LINK_SET, newState, POWER, NULL_KEY);
     sayDebug(INFO,menuOnOffButton("Set Panel Power ", newState));
 }
-
 
 integer agentIsInGroup(key agent, key groupKey)
 {
@@ -219,8 +220,8 @@ string DISCONNECT_SOURCE = "Disc Src";
 string DISCONNECT_DRAIN = "Disc Drain";
 string BREAKERS = "Breakers";
 string mainMenu = "Main";
-string rightBtn = ">>";
-string leftBtn = "<<";
+string rightArrow = "→️"; // ⇒ →    ⇥  ↘️ →
+string leftArrow = "←"; // ⇐ ←  ⇤
 integer dialog_channel;
 integer dialog_listen;
 integer dialog_countdown;
@@ -229,82 +230,53 @@ key menuAgentKey;
 integer menuChannel;
 integer menuListen;
 integer menuTimeout;
-integer DDmenuPage; // 0-based
+integer DDMenuPage; // 0-based
+integer DDMenuPages;
 
 string menuCheckbox(string title, integer onOff)
 // make checkbox menu item out of a button title and boolean state
 {
     string checkbox;
-    if (onOff)
-    {
-        checkbox = "☒";
+    if (onOff) {
+        return "☒ " + title;
+    } else {
+        return "☐ " + title;
     }
-    else
-    {
-        checkbox = "☐";
-    }
-    return checkbox + " " + title;
 }
 
 string onOffButton(integer onOff)
 // make checkbox menu item out of a button title and boolean state
 {
     string onOffButton;
-    if (onOff)
-    {
-        onOffButton = "❋";
+    if (onOff) {
+        return "●"; // "*"  or "●"
+    } else {
+        return "○";
     }
-    else
-    {
-        onOffButton = "○";
-    }
-    return onOffButton;
 }
 
 
 string menuOnOffButton(string title, integer onOff)
 // make checkbox menu item out of a button title and boolean state
 {
-    string onoffbutton;
-    if (onOff)
-    {
-        onoffbutton = "❋";
-    }
-    else
-    {
-        onoffbutton = "○";
-    }
-    return onoffbutton + " " + title;
+    return onOffButton(onOff) + " " + title;
 }
 
 string menuRadioButton(string title, string match)
 // make radio button menu item out of a button and the state text
 {
-    string radiobutton;
-    if (title == match)
-    {
-        radiobutton = "●";
-    }
-    else
-    {
-        radiobutton = "○";
-    }
-    return radiobutton + " " + title;
+    return onOffButton(title == match) + " "  + title;
 }
 
 string menuButtonActive(string title, integer onOff)
 // make a menu button be the text or the Inactive symbol
 {
     string button;
-    if (onOff)
-    {
-        button = title;
+    if (onOff) {
+        return title;
+    } else {
+        return "["+title+"]";
     }
-    else
-    {
-        button = "["+title+"]";
-    }
-    return button;
 }
 
 string trimMessageButton(string message) {
@@ -374,6 +346,38 @@ presentMainMenu(key whoClicked, integer allowed) {
     setUpMenu(mainMenu, whoClicked, message, buttons);
 }
 
+handleMainMenu(key objectKey, string message) {
+            if (message == STATUS) {
+                integer ingroup = agentIsInGroup(objectKey, guards);
+                report_status(ingroup);
+                llMessageLinked(LINK_SET, ingroup, STATUS, objectKey);
+                llSleep(2);
+                sendXP(objectKey, 1);
+            } else if (message == DEBUG_LEVELS) {
+                presentDebugLevelMenu(objectKey);
+            } else if (message == RESET) {
+                sendXP(objectKey, 10);
+                restartScripts();
+                
+            } else if (message == CONNECT_SOURCE) {
+                presentConnectSourceMenu(objectKey);
+            } else if (message == DISCONNECT_SOURCE) {
+                presentDisonnectSourceMenu(objectKey);
+            } else if (message == DISCONNECT_DRAIN) {
+                presentDrainBreakerMenu(objectKey, 0, TRUE);
+            } else if (trimMessageButton(message) == POWER) {
+                set_power_switch_state(!get_power_switch_state());
+                sendXP(objectKey, 10);
+            } else if (message == BREAKERS) {
+                presentDrainBreakerMenu(objectKey, 0, FALSE);
+            } else if (message == PING) {
+                llMessageLinked(LINK_SET, 0, PING, objectKey);
+                sendXP(objectKey, 1);
+            }
+
+}
+
+
 presentDebugLevelMenu(key whoClicked) {
     string message = "Set the Debug Level:";
     string debug_level_text = llList2String(debug_levels, debug_level);
@@ -417,70 +421,46 @@ presentDisonnectSourceMenu(key whoClicked) {
     setUpMenu(DISCONNECT_SOURCE, whoClicked, message, buttons);    
 }
 
-// *** need to generalize the paging algorithm
-
-presentDisonnectDrainMenu(key whoClicked, integer page) {
-    string message = "Select Power Drain to Disconnect:";
-    integer index;
-    list buttons = [];
-    integer startindex;
-    integer endindex; 
-    integer numCDrains = get_num_drains();
-    DDmenuPage = page;
-    if (numCDrains <= 12) {
-        startindex = 1;
-        endindex = numCDrains;
-    } else {
-        startindex = 1 + DDmenuPage * 9;
-        endindex = 9 + DDmenuPage * 9;
-        if (endindex > numCDrains) {
-            endindex = numCDrains;
-        }
-        string left = "-";
-        if (page > 0) {
-            left = leftBtn;
-        }
-        string right = "-";
-        if (page < llFloor(numCDrains / 9)) {
-            right = rightBtn;
-        }
-        buttons = buttons + [left, mainMenu, right];
-    }
-    for (index = startindex; index <= endindex; index = index + 1) {
-        message = message + "\n" + (string)index + " " + 
-            get_drain_name(index) + " " + EngFormat(get_drain_demand(index));
-        buttons = buttons + [(string)index];
-    }
-    setUpMenu(DISCONNECT_DRAIN, whoClicked, message, buttons);    
-}
-
-presentDrainBreakerMenu(key whoClicked, integer page) {
+presentDrainBreakerMenu(key whoClicked, integer menuPage, integer disconnect) {
+    // Handles Breaker ON/OFF and Breaker DISCONNECT
     string message = "Select Power Drain to Switch:";
-    integer index;
+    string identifier = BREAKERS;
+    if (disconnect) {
+        message = "Select Power Drain to Disconnect:";
+        identifier = DISCONNECT_DRAIN;
+    }
+    
     list buttons = [];
     integer startindex;
     integer endindex; 
     integer numCDrains = get_num_drains();
-    DDmenuPage = page;
+
     if (numCDrains <= 12) {
+        // Buttons fit on one page
+        DDMenuPages = 1;
         startindex = 1;
         endindex = numCDrains;
     } else {
-        startindex = 1 + DDmenuPage * 9;
-        endindex = 9 + DDmenuPage * 9;
+        // need more than one page
+        DDMenuPages = llCeil(numCDrains / 9 + 0.5);
+        
+        if (menuPage >= DDMenuPages) {
+            DDMenuPage = 0; 
+        } else if (menuPage < 0) {
+            DDMenuPage = DDMenuPages-1;
+        } else {
+            DDMenuPage = menuPage;
+        }
+
+        startindex = 1 + DDMenuPage * 9;
+        endindex = 9 + DDMenuPage * 9;
         if (endindex > numCDrains) {
             endindex = numCDrains;
         }
-        string left = "-";
-        if (page > 0) {
-            left = leftBtn;
-        }
-        string right = "-";
-        if (page < llFloor(numCDrains / 9)) {
-            right = rightBtn;
-        }
-        buttons = buttons + [left, mainMenu, right];
+        buttons = buttons + [leftArrow, mainMenu, rightArrow];
     }
+
+    integer index;
     for (index = startindex; index <= endindex; index = index + 1) {
         string switch = onOffButton(get_drain_switch(index));
         message = message + "\n" + (string)index +
@@ -489,11 +469,12 @@ presentDrainBreakerMenu(key whoClicked, integer page) {
             " " + get_drain_name(index);
         buttons = buttons + [(string)index + " " + switch];
     }
-    setUpMenu(BREAKERS, whoClicked, message, buttons);    
+    setUpMenu(identifier, whoClicked, message, buttons);    
 }
 
 handleBreaker(string message) {
     sayDebug(DEBUG, "HandleBreaker(\"" + message + "\")");
+    llPlaySound(breaker_1, 1.0);
     integer drain_num = (integer)message;
     integer switch;
     if (llSubStringIndex(message, "❋") > -1) {
@@ -614,49 +595,14 @@ default
         presentMainMenu(whoClicked, agentIsInGroup(whoClicked, guards));
     }
     
-    listen( integer channel, string name, key objectKey, string message )
+    listen(integer channel, string name, key objectKey, string message)
     {
         if (channel == menuChannel) {
             sayDebug(TRACE, "listen menuIdentifier:"+menuIdentifier+" name:"+name+" message:"+message);
             resetMenu();
-            // Main Menu
-            if (message == STATUS) {
-                integer ingroup = agentIsInGroup(objectKey, guards);
-                report_status(ingroup);
-                llMessageLinked(LINK_SET, ingroup, STATUS, objectKey);
-                llSleep(2);
-                sendXP(objectKey, 1);
-            } else if (message == DEBUG_LEVELS) {
-                presentDebugLevelMenu(objectKey);
-            } else if (message == RESET) {
-                sendXP(objectKey, 10);
-                restartScripts();
-                
-            } else if (message == CONNECT_SOURCE) {
-                presentConnectSourceMenu(objectKey);
-            } else if (message == DISCONNECT_SOURCE) {
-                presentDisonnectSourceMenu(objectKey);
-            } else if (message == DISCONNECT_DRAIN) {
-                presentDisonnectDrainMenu(objectKey, 0);
-                
-            } else if (trimMessageButton(message) == POWER) {
-                set_power_switch_state(!get_power_switch_state());
-                sendXP(objectKey, 10);
-            } else if (message == BREAKERS) {
-                presentDrainBreakerMenu(objectKey, 0);
-            } else if (message == PING) {
-                llMessageLinked(LINK_SET, 0, PING, objectKey);
-                sendXP(objectKey, 1);
-
-            // Dangerous Menu Item
-            // } else if (message == RESTART) {
-            //    sayDebug(WARN,"Resetting Data and Restarting Scripts.");
-            //    llMessageLinked(LINK_SET, 0, "reset_data", NULL_KEY);
-            //    llSleep(2);
-            //    restartScripts();
-
-                                
-            // menus with numeric buttons
+            
+            if (menuIdentifier == mainMenu) {
+                handleMainMenu(objectKey, message);
             } else if (menuIdentifier == DEBUG_LEVELS) {
                 setDebugLevelByName(trimMessageButton(message));
                 llLinksetDataWrite(DEBUG_LEVELS, (string)debug_level);
@@ -664,10 +610,12 @@ default
                 sendXP(objectKey, 1);
             } else if (menuIdentifier == CONNECT_SOURCE) {
                 sayDebug(DEBUG, "listen CONNECT_SOURCE from "+name+": "+message);
+                llPlaySound(breaker_1, 1.0);
                 llRegionSayTo(get_known_source_key(unsorted((integer)message)), POWER_CHANNEL, CONNECT+REQ);
                 sayDebug(INFO, "Connected Source "+get_known_source_name((integer)message));
                 sendXP(objectKey, 10);
             } else if (menuIdentifier == DISCONNECT_SOURCE) {
+                llPlaySound(breaker_1, 1.0);
                 sayDebug(DEBUG, "listen DISCONNECT_SOURCE from "+name+": "+message);
                 key source_key = get_connected_source_key((integer)message);
                 llRegionSayTo(source_key, POWER_CHANNEL, DISCONNECT+REQ);
@@ -680,36 +628,38 @@ default
             // that it won't know whether they are source or drain.
             // Separating them out here and making a deparate dispatcher is more complicated. 
             } else if (menuIdentifier == DISCONNECT_DRAIN) {
-                if (message == leftBtn) {
-                    presentDisonnectDrainMenu(objectKey, DDmenuPage-1);
-                } else if (message == rightBtn) {
-                    presentDisonnectDrainMenu(objectKey, DDmenuPage+1);
+                if (message == leftArrow) {
+                    presentDrainBreakerMenu(objectKey, DDMenuPage-1, TRUE);
+                } else  if (message == rightArrow) {
+                    presentDrainBreakerMenu(objectKey, DDMenuPage+1, TRUE);
                 } else if (message == mainMenu) {
                     presentMainMenu(objectKey, TRUE);
                 } else {
                     sayDebug(DEBUG, "listen DISCONNECT_DRAIN from "+name+": "+message);
-                    sayDebug(INFO, "Disonnected Drain "+get_drain_name((integer)message));
+                    llPlaySound(breaker_1, 1.0);
                     key drain_key = get_drain_key((integer)message);
                     llRegionSayTo(drain_key, POWER_CHANNEL, DISCONNECT+REQ);
                     llMessageLinked(LINK_SET, (integer)message, "handle_disconnect_req", drain_key);
-                    presentDisonnectDrainMenu(objectKey, DDmenuPage);
                     sendXP(objectKey, 5);
+                    llSleep(1.0); // pause for linkset data write
+                    sayDebug(INFO, "Disonnected Drain "+get_drain_name((integer)message));
+                    presentDrainBreakerMenu(objectKey, 0, TRUE);
                 }
             // DISCONNECT_SOURCE and DISCONNECT_DRAIN go into the same handler in Data
             // because Data can also receive generic DISCONNECT+ACKs 
             // that it won't know whether they are source or drain.
             // Separating them out here and making a deparate dispatcher is more complicated. 
             } else if (menuIdentifier == BREAKERS) {
-                if (message == leftBtn) {
-                    presentDrainBreakerMenu(objectKey, DDmenuPage-1);
-                } else if (message == rightBtn) {
-                    presentDrainBreakerMenu(objectKey, DDmenuPage+1);
+                if (message == leftArrow) {
+                    presentDrainBreakerMenu(objectKey, DDMenuPage-1, FALSE);
+                } else  if (message == rightArrow) {
+                    presentDrainBreakerMenu(objectKey, DDMenuPage+1, FALSE);
                 } else if (message == mainMenu) {
                     presentMainMenu(objectKey, TRUE);
                 } else {
                     handleBreaker(message);
                     sendXP(objectKey, 2);
-                    presentDrainBreakerMenu(objectKey, DDmenuPage);
+                    presentDrainBreakerMenu(objectKey, 0, FALSE);
                 }
             } else {
                 sayDebug(ERROR, "listen did not handle "+menuIdentifier+":"+message);
