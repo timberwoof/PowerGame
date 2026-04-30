@@ -261,7 +261,7 @@ string onOffButton(integer onOff)
 {
     string onOffButton;
     if (onOff) {
-        return "●"; // "*"  or "●"
+        return "●";
     } else {
         return "○";
     }
@@ -326,6 +326,10 @@ setUpMenu(string identifier, key avatarKey, string message, list buttons)
     menuChannel = -(llFloor(llFrand(10000)+1000));
     menuListen = llListen(menuChannel, "", avatarKey, "");
     menuTimeout = llFloor(llGetTime()) + 30;
+    if (llStringLength(message) > 400) {
+        sayDebug(WARN,"setUpMenu message ws too long. Truncating.");
+        message = llGetSubString(message,0,400);
+    }
     llDialog(avatarKey, message, buttons, menuChannel);
 }
 
@@ -447,7 +451,7 @@ presentDrainBreakerMenu(key whoClicked, integer menuPage, integer disconnect) {
     integer endindex; 
     integer numCDrains = get_num_drains();
 
-    if (numCDrains <= 12) {
+    if (numCDrains <= 9) {
         // Buttons fit on one page
         DDMenuPages = 1;
         startindex = 1;
@@ -489,7 +493,7 @@ handleBreaker(string message) {
     llPlaySound(breaker_1, 1.0);
     integer drain_num = (integer)message;
     integer switch;
-    if (llSubStringIndex(message, "❋") > -1) {
+    if (llSubStringIndex(message, "●") > -1) {
         switch = FALSE;
     } else if (llSubStringIndex(message, "○") > -1) {
         switch = TRUE;
