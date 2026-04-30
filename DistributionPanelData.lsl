@@ -385,6 +385,16 @@ set_drain_switch(integer drain_num, integer newState) {
     //llMessageLinked(LINK_SET, 0, BREAKERS, NULL_KEY);
 }
 
+fix_drain_switches(){
+    if ((num_drains > 0) & (get_drain_key(1) == "") ) {
+        sayDebug(INFO, "fix_drain_switches");
+        integer i;
+        for (i = 1; i <= num_drains; i = i + 1) {
+            set_drain_switch(i, 1);
+        }
+    }
+}
+
 
 handle_ping_req(string object_key, string object_name) {
     // respond to ping with max power capacity
@@ -423,6 +433,7 @@ upsert_drain(string drain_key, string drain_name) {
 }
 
 delete_drain(integer drain_num) {
+    // from drain_num on up, shift all the drains one down. 
     integer i;
     for (i = drain_num; i < num_drains; i = i + 1) {
         llLinksetDataWrite(DRAIN+(string)i+KEY, get_drain_key(i+1)); 
@@ -431,6 +442,7 @@ delete_drain(integer drain_num) {
         llLinksetDataWrite(DRAIN+(string)i+RATE, (string)get_drain_rate(i+1));  
         llLinksetDataWrite(DRAIN+(string)i+SWITCH, (string)get_drain_switch(i+1));  
     }
+    // delete the top drain
     llLinksetDataDelete(DRAIN+(string)num_drains+KEY);
     llLinksetDataDelete(DRAIN+(string)num_drains+NAME);
     llLinksetDataDelete(DRAIN+(string)num_drains+DEMAND);
@@ -474,7 +486,7 @@ handle_disconnect_req(string objectKey) {
         llMessageLinked(LINK_SET, 0, "handle_disconnect_req_source", NULL_KEY);
         sayDebug(WARN, "handle_disconnect_req source ("+objectName+") succeeded.");
     } else {
-        sayDebug(WARN, "handle_disconnect_req unknown object ("+objectName+") attempted disconnect");
+        sayDebug(DEBUG, "handle_disconnect_req unknown object ("+objectName+") attempted disconnect");
     }
     llRegionSayTo(objectKey, POWER_CHANNEL, DISCONNECT+ACK);
 }
@@ -624,6 +636,9 @@ default
         num_known_sources = (integer)llLinksetDataRead("num_known_sources");
         num_sources = (integer)llLinksetDataRead("num_sources");
         num_drains = (integer)llLinksetDataRead("num_drains");
+       
+        fix_drain_switches(); 
+        
         sayDebug(DEBUG, "state_entry done. Free Memory: " + (string)llGetFreeMemory());
     }
     
@@ -653,7 +668,7 @@ default
         } else if (message == "calculate_source_power_capacity") {
             sayDebug(TRACE, "link_message ignored");
         } else if (message == "delete_drain") {
-            sayDebug(TRACE, "link_message ignored");
+            delete_drain(Number);
         } else if (message == "handle_ping_req") {
             sayDebug(TRACE, "link_message ignored");
         // we send these once we know whether source or drain was disconnected.
