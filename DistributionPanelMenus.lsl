@@ -25,6 +25,7 @@ string CAPACITY = "Capacity";
 string DEMAND = "Demand";
 string RATE = "Rate";
 string SWITCH = "Switch";
+string XP = "XP";
 
 string dataScriptName = "DistributionPanelData";
 string logicScriptName = "DistributionPanelLogic";
@@ -44,17 +45,16 @@ integer TRACE = 4;
 string DEBUG_LEVELS = "DebugLevels";
 list debug_levels = ["ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
 integer debug_level = 0;
+
+sendXP(key agent, integer XP) {
+    llRegionSayTo(agent, MONITOR_CHANNEL, llList2Json(JSON_OBJECT, ["XP", (string)XP]));
+}
+
 sayDebug(integer message_level, string message) {
-    message = "MENU "+llList2String(debug_levels, message_level) + ": " + message;
     if (message_level <= debug_level) {
-        if (message_level <= WARN) {
-            // warnings and errors on local chat and on Power Monitor HUD
-            llShout(MONITOR_CHANNEL, message);
-            llWhisper(0, message);
-        } else {
-            // everyting else just on Power Monitor HUD
-            llSay(MONITOR_CHANNEL, message);
-        }
+        llSay(MONITOR_CHANNEL, llList2Json(JSON_OBJECT, [
+            llList2String(debug_levels, message_level), 
+            "MENU: " + message]));
     }
 }
 
@@ -78,6 +78,7 @@ integer get_power_switch_state() {
 set_power_switch_state(integer newState) {
     llLinksetDataWrite("power_switch_state", (string)newState);
     llMessageLinked(LINK_SET, newState, POWER, NULL_KEY);
+    sayDebug(INFO,menuOnOffButton("Set Panel Power ", newState));
 }
 
 
@@ -503,6 +504,7 @@ handleBreaker(string message) {
         sayDebug(ERROR, "HandleBreaker(\"" + message + "\") did not contain correct symbol.");
     }
     set_drain_switch(drain_num, switch);
+    sayDebug(INFO,menuOnOffButton("Set Breaker Power ", switch));
     llMessageLinked(LINK_SET, 0, "HandleBreaker", NULL_KEY);
 }
 
@@ -623,11 +625,14 @@ default
                 integer ingroup = agentIsInGroup(objectKey, guards);
                 report_status(ingroup);
                 llMessageLinked(LINK_SET, ingroup, STATUS, objectKey);
+                llSleep(2);
+                sendXP(objectKey, 1);
             } else if (message == DEBUG_LEVELS) {
                 presentDebugLevelMenu(objectKey);
             } else if (message == RESET) {
+                sendXP(objectKey, 10);
                 restartScripts();
-
+                
             } else if (message == CONNECT_SOURCE) {
                 presentConnectSourceMenu(objectKey);
             } else if (message == DISCONNECT_SOURCE) {
@@ -637,10 +642,12 @@ default
                 
             } else if (trimMessageButton(message) == POWER) {
                 set_power_switch_state(!get_power_switch_state());
+                sendXP(objectKey, 10);
             } else if (message == BREAKERS) {
                 presentDrainBreakerMenu(objectKey, 0);
             } else if (message == PING) {
                 llMessageLinked(LINK_SET, 0, PING, objectKey);
+                sendXP(objectKey, 1);
 
             // Dangerous Menu Item
             // } else if (message == RESTART) {
@@ -655,14 +662,24 @@ default
                 setDebugLevelByName(trimMessageButton(message));
                 llLinksetDataWrite(DEBUG_LEVELS, (string)debug_level);
                 llMessageLinked(LINK_SET, debug_level, DEBUG_LEVELS, NULL_KEY);
+                sendXP(objectKey, 1);
             } else if (menuIdentifier == CONNECT_SOURCE) {
                 sayDebug(DEBUG, "listen CONNECT_SOURCE from "+name+": "+message);
                 llRegionSayTo(get_known_source_key(unsorted((integer)message)), POWER_CHANNEL, CONNECT+REQ);
+                sayDebug(INFO, "Connected Source "+get_known_source_name((integer)message));
+                sendXP(objectKey, 10);
             } else if (menuIdentifier == DISCONNECT_SOURCE) {
                 sayDebug(DEBUG, "listen DISCONNECT_SOURCE from "+name+": "+message);
                 key source_key = get_connected_source_key((integer)message);
                 llRegionSayTo(source_key, POWER_CHANNEL, DISCONNECT+REQ);
                 llMessageLinked(LINK_SET, (integer)message, "handle_disconnect_req", source_key);
+                sayDebug(INFO, "Disonnected Source "+get_connected_source_name((integer)message));
+                sendXP(objectKey, 10);
+
+            // DISCONNECT_SOURCE and DISCONNECT_DRAIN go into the same handler in Data
+            // because Data can also receive generic DISCONNECT+ACKs 
+            // that it won't know whether they are source or drain.
+            // Separating them out here and making a deparate dispatcher is more complicated. 
             } else if (menuIdentifier == DISCONNECT_DRAIN) {
                 if (message == leftBtn) {
                     presentDisonnectDrainMenu(objectKey, DDmenuPage-1);
@@ -672,15 +689,13 @@ default
                     presentMainMenu(objectKey, TRUE);
                 } else {
                     sayDebug(DEBUG, "listen DISCONNECT_DRAIN from "+name+": "+message);
+                    sayDebug(INFO, "Disonnected Drain "+get_drain_name((integer)message));
                     key drain_key = get_drain_key((integer)message);
                     llRegionSayTo(drain_key, POWER_CHANNEL, DISCONNECT+REQ);
                     llMessageLinked(LINK_SET, (integer)message, "handle_disconnect_req", drain_key);
-                    presentDisonnectDrainMenu(objectKey, DDmenuPage);
+                    sendXP(objectKey, 5);
                 }
-            // DISCONNECT_SOURCE and DISCONNECT_DRAIN go into the same handler in Data
-            // because Data can also receive generic DISCONNECT+ACKs 
-            // that it won't know whether they are source or drain.
-            // Separating them out here and making a deparate dispatcher is more complicated. 
+
             } else if (menuIdentifier == BREAKERS) {
                 if (message == leftBtn) {
                     presentDrainBreakerMenu(objectKey, DDmenuPage-1);
@@ -690,13 +705,13 @@ default
                     presentMainMenu(objectKey, TRUE);
                 } else {
                     handleBreaker(message);
-                    presentDrainBreakerMenu(objectKey, DDmenuPage);
+                    sendXP(objectKey, 2);
                 }
             } else {
                 sayDebug(ERROR, "listen did not handle "+menuIdentifier+":"+message);
             }
         } else if (channel == SONIC_CHANNEL) {
-            // If we get any message from a Novatech Sonic Sc rewdriver, toggle the power
+            // If we get any message from a Novatech Sonic Screwdriver, toggle the power
             sayDebug(WARN, "Sonic Screwdriver in use.");
             llRegionSayTo(objectKey, SONIC_CHANNEL, "ccSonicOK");
             set_power_switch_state(!get_power_switch_state());
