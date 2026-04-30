@@ -199,7 +199,7 @@ integer get_drain_switch(integer drain_num) {
 }
 set_drain_switch(integer drain_num, integer newState) {
     llLinksetDataWrite(DRAIN+(string)drain_num+SWITCH, (string)newState);
-    //llMessageLinked(LINK_SET, 0, BREAKERS, NULL_KEY);
+    llMessageLinked(LINK_SET, 0, "HandleBreaker", NULL_KEY);
 }
 
 // ****************************************************
@@ -503,9 +503,8 @@ handleBreaker(string message) {
     } else {
         sayDebug(ERROR, "HandleBreaker(\"" + message + "\") did not contain correct symbol.");
     }
+    sayDebug(DEBUG,menuOnOffButton("Set Breaker Power ", switch));
     set_drain_switch(drain_num, switch);
-    sayDebug(INFO,menuOnOffButton("Set Breaker Power ", switch));
-    llMessageLinked(LINK_SET, 0, "HandleBreaker", NULL_KEY);
 }
 
 // ***********************************
@@ -693,9 +692,13 @@ default
                     key drain_key = get_drain_key((integer)message);
                     llRegionSayTo(drain_key, POWER_CHANNEL, DISCONNECT+REQ);
                     llMessageLinked(LINK_SET, (integer)message, "handle_disconnect_req", drain_key);
+                    presentDisonnectDrainMenu(objectKey, DDmenuPage);
                     sendXP(objectKey, 5);
                 }
-
+            // DISCONNECT_SOURCE and DISCONNECT_DRAIN go into the same handler in Data
+            // because Data can also receive generic DISCONNECT+ACKs 
+            // that it won't know whether they are source or drain.
+            // Separating them out here and making a deparate dispatcher is more complicated. 
             } else if (menuIdentifier == BREAKERS) {
                 if (message == leftBtn) {
                     presentDrainBreakerMenu(objectKey, DDmenuPage-1);
@@ -706,6 +709,7 @@ default
                 } else {
                     handleBreaker(message);
                     sendXP(objectKey, 2);
+                    presentDrainBreakerMenu(objectKey, DDmenuPage);
                 }
             } else {
                 sayDebug(ERROR, "listen did not handle "+menuIdentifier+":"+message);
