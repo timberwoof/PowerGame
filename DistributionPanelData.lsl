@@ -13,8 +13,6 @@ float req_ack_delay = 1; // these come in fast if someone's moving around lights
 
 float switch_delay = 0.0; // sleep between setting breakers in a loop
 integer pingAcks = FALSE;
-integer drainPowerReqs = FALSE;
-integer sourcePowerAcks = FALSE;
 
 string REQ = "-REQ";
 string ACK = "-ACK";
@@ -391,7 +389,6 @@ fix_drain_switches(){
     }
 }
 
-
 handle_ping_req(string object_key, string object_name) {
     // respond to ping with max power capacity
     //sayDebug(DEBUG, "HPR");
@@ -495,22 +492,6 @@ handle_disconnect_req(string objectKey) {
     llRegionSayTo(objectKey, POWER_CHANNEL, DISCONNECT+ACK);
 }
 
-string OnOffButton(integer onOff)
-// make OnOffButton menu item out of a button title and boolean state
-{
-    string OnOffButton;
-    if (onOff)
-    {
-        OnOffButton = "❋";
-    }
-    else
-    {
-        OnOffButton = "○";
-    }
-    return OnOffButton;
-}
-
-
 list_drains(integer ingroup) {
     string status;
     status ="Power Drains:";
@@ -560,10 +541,6 @@ list_drains(integer ingroup) {
 
 // ***********************************
 // Communications to Logic
-req_power_from_sources(integer power) {
-    llMessageLinked(LINK_SET, power, "req_power_from_sources", NULL_KEY);
-}
-
 calculate_source_power_rate() {
      llMessageLinked(LINK_SET, 1, "calculate_source_power_rate", NULL_KEY);
 }
@@ -591,8 +568,18 @@ integer getMessageParameter(string message) {
     return (integer)parameters;
 }
 
-string on_off_string(integer pwr_state)  {
-    if (pwr_state) {
+string OnOffButton(integer onOff)
+// make OnOffButton menu item out of a button title and boolean state
+{
+    if (onOff) {
+        return "❋";
+    } else {
+        return "○";
+    }
+}
+
+string on_off_string(integer onOff)  {
+    if (onOff) {
         return "On";
     } else {
         return "Off";
@@ -718,14 +705,11 @@ default
     
     timer() {
         //sayDebug(TRACE, "timer waiting for "+timer_waiting_for);
-        // handle_souce_ping_ack
         if (pingAcks) {
             sayDebug(TRACE, "timer() handles pingAcks");
             pingAcks = FALSE;
             calculate_source_power_capacity();
-        }
-        
-        if (!(pingAcks | drainPowerReqs | sourcePowerAcks)) {
+        } else {
             llSetTimerEvent(0);
         }
     }
