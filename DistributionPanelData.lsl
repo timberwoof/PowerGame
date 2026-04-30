@@ -506,6 +506,8 @@ string OnOffButton(integer onOff)
 list_drains(integer ingroup) {
     string status;
     status ="Power Drains:";
+    integer clump_size = 10;
+    integer drain_clump;
     integer drain_num;
     integer drain_rate;
     integer drain_switch;
@@ -514,17 +516,23 @@ list_drains(integer ingroup) {
     integer drain_demand; 
     integer total_demand = 0;
     if (num_drains > 0) {
-        for (drain_num = 1; drain_num <= num_drains; drain_num = drain_num + 1) {
+        // Drains can be a lot, so list them in clumps of 10. 
+        for (drain_clump = 1; drain_clump <= num_drains; drain_clump = drain_clump + clump_size) {
+            string text_clump = "";
+            for (drain_num = drain_clump; drain_num < drain_clump+clump_size; drain_num = drain_num + 1) {
+            
             drain_rate = get_drain_rate(drain_num);
             drain_demand = get_drain_demand(drain_num);
             drain_switch = get_drain_switch(drain_num);
             total_drain = total_drain + drain_rate*drain_switch;
             total_demand = total_demand + drain_demand;
-            status = status + "\n" + (string)drain_num + 
+            text_clump = text_clump + "\n" + (string)drain_num + 
                 " " + OnOffButton(drain_switch) + 
                 " " + engFormat(drain_rate*drain_switch) + 
                 "/" + engFormat(drain_demand) +
                 " " + get_drain_name(drain_num);
+            }
+            sayDebug(INFO, text_clump);
         }
         status = status + "\n----------\n" + 
                 OnOffButton(powerSwitch) + 
