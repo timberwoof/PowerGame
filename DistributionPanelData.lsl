@@ -408,8 +408,16 @@ handle_ping_req(string object_key, string object_name) {
         string message = PING+ACK+"["+llLinksetDataRead("source_power_capacity")+"]";
         sayDebug(DEBUG, "handle_ping_req sends \""+message+ "\" to "+object_name);
         llRegionSayTo(object_key, POWER_CHANNEL, message);
+        
+        // If this was from an known drain then update it
+        if (get_source_key_index(object_key) > -1) {
+            sayDebug(DEBUG, object_name+" was already connected as a Source.");
+            upsert_drain(object_key, object_name);
+            string message = CONNECT+ACK+"["+llLinksetDataRead("source_power_capacity")+"]";
+            sayDebug(TRACE, "Sending Drain " + object_name + " \"" + message +"\"");
+            llRegionSayTo(object_key, POWER_CHANNEL, message);
+        }
     }
-
 }
 
 upsert_drain(string drain_key, string drain_name) {
