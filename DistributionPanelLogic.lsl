@@ -685,14 +685,14 @@ default
             handle_ping_request(objectKey, Number);
         } else if (message == "handle_disconnect_req_source") {
             request_power_from_sources(TRUE, drain_power_demand);
-            sayDebug(TRACE, "handle_disconnect_req_source drain succeeded.");
+            sayDebug(TRACE, "handle_disconnect_req_source succeeded.");
         } else if (message == "delete_source") {
             request_power_from_sources(TRUE, drain_power_demand);
         } else if (message == "handle_disconnect_req_drain") {
             calculate_drain_power_demand();
             calculate_drain_power_rate();
             request_power_from_sources(FALSE, drain_power_demand);
-            sayDebug(TRACE, "handle_disconnect_req drain succeeded.");
+            sayDebug(TRACE, "handle_disconnect_req_drain succeeded.");
             
         } else if (message == "Power") {
             switch_power(Number);
@@ -710,9 +710,8 @@ default
             sayDebug(TRACE, "Ping ignored");
         } else if (message == "handle_ping_req") {
             sayDebug(TRACE, "handle_ping_req ignored");
-        } else if (message == "handle_disconnect_req_source") {
-            sayDebug(TRACE, "link_message ignored");
-
+        } else if (message == "handle_disconnect_req") {
+            sayDebug(TRACE, "handle_disconnect_req ignored");
         } else {
             sayDebug(ERROR, "link_message did not handle message "+(string)Number+", "+message);
         }
