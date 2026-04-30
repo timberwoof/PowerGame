@@ -56,17 +56,23 @@ integer WARN = 1;
 integer INFO = 2;
 integer DEBUG = 3;
 integer TRACE = 4;
-string DEBUG_LEVELS = "DebugLevels";
+string DEBUG_LEVEL = "DebugLevel";
 list debug_levels = ["ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
+list debug_volumes = ["shout", "shout", "say", "whisper", "whisper"];
 integer debug_level = 2; // debug normally 2 info. 
-
-sendMonitor(string keystr, string message) {
-    llSay(MONITOR_CHANNEL, llList2Json(JSON_OBJECT, [keystr, message]));
-}
 
 sayDebug(integer message_level, string message) {
     if (message_level <= debug_level) {
-        sendMonitor(llList2String(debug_levels, message_level), "MENU: " + message);
+        string level = llList2String(debug_levels, message_level);
+        string volume = llList2String(debug_volumes, message_level);
+        string json = llList2Json(JSON_OBJECT, [level, "LOGIC: "+message]);
+        if (volume == "shout") {
+            llShout(MONITOR_CHANNEL, json);
+        } else if (volume == "say") {
+            llSay(MONITOR_CHANNEL, json);
+        } else if (volume == "whisper") {
+            llWhisper(MONITOR_CHANNEL, json);
+        } 
     }
 }
 
@@ -142,21 +148,6 @@ handle_ping_request(key object_key, integer source_index){
     string object_name = get_source_name(source_index);
     sayDebug(DEBUG, "handle_ping_request sends \""+message+ "\" to "+object_name);
     llRegionSayTo(object_key, POWER_CHANNEL, message);
-}
-
-upsert_source(key source_key, string source_name, integer source_capacity, integer source_demand, integer source_rate) {
-    integer num_sources = get_num_sources();
-    integer index = get_source_key_index(source_key);
-    if (index < 0) {
-        num_sources = num_sources + 1;
-        llLinksetDataWrite("num_sources", (string)num_sources);
-        index = num_sources;
-    }
-    llLinksetDataWrite(SOURCE+(string)index+KEY, source_key); 
-    llLinksetDataWrite(SOURCE+(string)index+NAME, source_name); 
-    llLinksetDataWrite(SOURCE+(string)index+CAPACITY, (string)source_capacity); 
-    llLinksetDataWrite(SOURCE+(string)index+DEMAND, (string)source_demand); 
-    llLinksetDataWrite(SOURCE+(string)index+RATE, (string)0); 
 }
 
 calculate_source_power_capacity() {
@@ -557,7 +548,7 @@ default
 {
     state_entry()
     {
-        debug_level = (integer)llLinksetDataRead(DEBUG_LEVELS);
+        debug_level = (integer)llLinksetDataRead(DEBUG_LEVEL);
         setDebugLevel(debug_level);
         sayDebug(DEBUG, "state_entry Sleep");
         llSleep(1);
@@ -595,14 +586,14 @@ default
             source_power_capacity = 0;
             source_power_rate = 0;
             drain_power_demand = 0;
-        } else if (message == DEBUG_LEVELS) {
+        } else if (message == DEBUG_LEVEL) {
             setDebugLevel(Number);
             
         } else if (message == "handle_ping_request") {
             handle_ping_request(objectKey, Number);
         } else if (message == "handle_source_connect_ack") {
             request_power_from_sources(TRUE, drain_power_demand);
-            sayDebug(TRACE, "handle_source_connect_ack succeeded.");
+            sayDebug(TRACE, "handle_source_connect_ack succeeded");
         } else if (message == "handle_disconnect_req_source") {
             request_power_from_sources(TRUE, drain_power_demand);
             sayDebug(TRACE, "handle_disconnect_req_source succeeded.");
