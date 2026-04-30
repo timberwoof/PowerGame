@@ -494,7 +494,6 @@ handle_disconnect_req(string objectKey) {
 
 list_drains(integer ingroup) {
     string status;
-    status ="Power Drains:";
     integer clump_size = 10;
     integer drain_clump;
     integer drain_num;
@@ -507,23 +506,27 @@ list_drains(integer ingroup) {
     if (num_drains > 0) {
         // Drains can be a lot, so list them in clumps of 10. 
         for (drain_clump = 1; drain_clump <= num_drains; drain_clump = drain_clump + clump_size) {
-            string text_clump = "";
-            for (drain_num = drain_clump; drain_num < drain_clump+clump_size; drain_num = drain_num + 1) {
+            string status = "Power Drains List:";
+            integer limit = drain_clump + clump_size;
+            if (limit > num_drains) {
+                limit = num_drains;
+            }
+            for (drain_num = drain_clump; drain_num <= limit; drain_num = drain_num + 1) {
             
             drain_rate = get_drain_rate(drain_num);
             drain_demand = get_drain_demand(drain_num);
             drain_switch = get_drain_switch(drain_num);
             total_drain = total_drain + drain_rate*drain_switch;
             total_demand = total_demand + drain_demand;
-            text_clump = text_clump + "\n" + (string)drain_num + 
+            status = status + "\n" + (string)drain_num + 
                 " " + OnOffButton(drain_switch) + 
                 " " + engFormat(drain_rate*drain_switch) + 
                 "/" + engFormat(drain_demand) +
                 " " + get_drain_name(drain_num);
             }
-            sayDebug(INFO, text_clump);
+            sayDebug(INFO, status);
         }
-        status = status + "\n----------\n" + 
+        status =  "Power Drains Sum:" + "\n----------\n" + 
                 OnOffButton(powerSwitch) + 
                 " " + engFormat(total_drain) +
                 "/" + engFormat(total_demand) + 
@@ -536,7 +539,6 @@ list_drains(integer ingroup) {
     } else {
         llWhisper(0, status);
     }
-    status = "";
 }
 
 // ***********************************
